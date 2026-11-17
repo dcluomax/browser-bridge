@@ -27,13 +27,17 @@
   <img src="docs/assets/onboarding-flow.svg" alt="Browser Bridge 四步快速上手流程：一键安装、加载扩展、分享标签页、调用 AI Agent" width="100%" />
 </p>
 
-### 环境要求
+### 方式 A：免编译直接下载预构建安装包（GitHub Releases）
 
-- **Rust** `1.85+`（`rustup`）
-- **Node.js** `20+`（`npm`）
-- *（可选）* **Python** `3.10+`（用于本地零依赖 Python SDK）
+无需安装 Rust 或 Node.js，直接前往 **[GitHub Releases](https://github.com/dcluomax/browser-bridge/releases/latest)** 下载对应系统的预编译宿主二进制（`windows-x64`、`windows-arm64`、`macos-arm64`、`linux-x64`）、扩展包（`browser-bridge-chromium-0.7.0.zip` / `.xpi`）以及 Python `.whl` 安装包：
 
-### 第一步：一行命令编译、安装并自动注册 MCP
+```bash
+BrowserBridge install --chromium-id ggkciaoahjoickdapninkfaceeadombm
+```
+
+### 方式 B：从源码一行命令编译、安装并自动注册 MCP
+
+环境要求：**Rust** `1.85+`、**Node.js** `20+`、*（可选）* **Python** `3.10+`。
 
 **Windows (PowerShell)：**
 

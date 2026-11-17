@@ -42,13 +42,18 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or containeriz
   <img src="docs/assets/onboarding-flow.svg" alt="Four-step onboarding flow: run installer, load unpacked extension once, share a tab, and prompt your AI agent" width="100%" />
 </p>
 
-### Prerequisites
+### Option A: Zero-Build Install from Prebuilt GitHub Releases
 
-- **Rust** `1.85+` (`rustup`)
-- **Node.js** `20+` (`npm`)
-- *(Optional)* **Python** `3.10+` for the local Python SDK
+Download the precompiled binary for your platform (`windows-x64`, `windows-arm64`, `macos-arm64`, `linux-x64`) plus `browser-bridge-chromium-0.7.0.zip` or `browser-bridge-firefox-0.7.0.xpi` from **[GitHub Releases](https://github.com/dcluomax/browser-bridge/releases/latest)** — no Rust or Node.js toolchain needed:
 
-### 1. Build, Install & Register MCP in One Command
+```bash
+# Register the native host manifest once (replace <CHROMIUM_EXT_ID> from extension/bridge.config.json: ggkciaoahjoickdapninkfaceeadombm)
+BrowserBridge install --chromium-id ggkciaoahjoickdapninkfaceeadombm
+```
+
+### Option B: Build, Install & Register MCP from Source in One Command
+
+Prerequisites: **Rust** `1.85+` (`rustup`), **Node.js** `20+` (`npm`), and *(optional)* **Python** `3.10+`.
 
 **Windows (PowerShell):**
 
