@@ -15,7 +15,7 @@ jobs:
     name: Sync wiki/ to GitHub Wiki
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Push wiki pages to repository Wiki
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
