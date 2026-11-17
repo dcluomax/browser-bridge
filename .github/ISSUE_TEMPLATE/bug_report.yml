@@ -1,0 +1,55 @@
+name: Bug Report
+description: Report a bug in the extension, Rust native host, MCP server, or Python SDK
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! Please scrub any private URLs, cookies, or account details before submitting.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11 / 10 (x64)
+        - Windows 11 (ARM64)
+        - macOS (Apple Silicon / Intel)
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Microsoft Edge
+        - Google Chrome
+        - Brave / Chromium
+        - Mozilla Firefox
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP Client or SDK
+      description: e.g. GitHub Copilot CLI, VS Code Copilot, Claude Desktop, Claude Code, Cursor, Python SDK 0.7.0
+      placeholder: GitHub Copilot in VS Code
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Share a tab in Read-Write mode...
+        2. Call browser_snapshot...
+        3. Observe error...
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: "`BrowserBridge status` Output & Logs"
+      description: Paste sanitized output of `BrowserBridge status` and any relevant stderr/extension console errors.
+      render: shell

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bridge Test</title>
+    <style>
+      body { font: 16px system-ui, sans-serif; margin: 24px; }
+      .card { cursor: pointer; display: inline-block; padding: 6px 10px; border: 1px solid #888; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Bridge Test</h1>
+    <form id="f">
+      <label for="name-input">Name</label>
+      <input id="name-input" name="name" placeholder="Your name" />
+      <label for="pw">Password</label>
+      <input id="pw" type="password" value="secret-value" />
+      <label><input type="checkbox" id="sub" /> Subscribe</label>
+      <label for="color">Color</label>
+      <select id="color">
+        <option value="red">Red</option>
+        <option value="green">Green</option>
+        <option value="blue">Blue</option>
+      </select>
+      <button type="submit">Submit</button>
+    </form>
+    <p id="out"></p>
+    <div id="notes" contenteditable="true" aria-label="Notes" style="min-height: 2em; border: 1px solid #ccc"></div>
+    <button id="later" type="button">Load later</button>
+    <div id="later-out"></div>
+    <p id="keys">key: none</p>
+    <div class="card" id="card">Clickable card</div>
+    <p id="card-out"></p>
+    <p class="hidden">Invisible secret text</p>
+    <shadow-widget></shadow-widget>
+    <iframe id="frame" title="Inner frame" width="320" height="90"></iframe>
+    <p><a href="/second.html">Next page</a></p>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      $('frame').src = `${location.protocol}//localhost:${location.port}/frame.html`;
+      $('f').addEventListener('submit', (event) => {
+        event.preventDefault();
+        $('out').textContent = `Submitted: ${$('name-input').value} / ${$('sub').checked ? 'subscribed' : 'not subscribed'} / ${$('color').value}`;
+      });
+      $('later').addEventListener('click', () => setTimeout(() => { $('later-out').textContent = 'Loaded after delay'; }, 1000));
+      window.addEventListener('keydown', (event) => { $('keys').textContent = `key: ${event.key}`; });
+      $('card').addEventListener('click', () => { $('card-out').textContent = 'Card clicked'; });
+      customElements.define('shadow-widget', class extends HTMLElement {
+        constructor() {
+          super();
+          const root = this.attachShadow({ mode: 'open' });
+          root.innerHTML = '<button type="button">Shadow action</button><span id="s"></span>';
+          root.querySelector('button').addEventListener('click', () => { root.querySelector('#s').textContent = 'Shadow clicked'; });
+        }
+      });
+    </script>
+  </body>
+</html>

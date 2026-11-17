@@ -1,0 +1,24 @@
+# Dependencies & build outputs
+node_modules/
+extension/dist/
+rust/target/
+
+# Python packaging & caches
+__pycache__/
+*.py[cod]
+python/build/
+python/dist/
+python/*.egg-info/
+.venv/
+venv/
+*.whl
+
+# IDE, OS & logs
+*.log
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+

@@ -1,0 +1,24 @@
+name: Feature Request
+description: Propose an enhancement to MCP tools, Site Memory routines, WebMCP, or language SDKs
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What workflow or automation scenario are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the MCP tool, SDK API, popup control, or protocol behavior you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security & Privacy Considerations
+      description: How does this interact with per-tab sharing, Read-Only mode, and the zero-port local IPC boundary?

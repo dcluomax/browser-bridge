@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "browser-bridge"
+version = "0.7.0"
+description = "Zero-dependency local Python SDK for Browser Bridge (control your own signed-in Edge, Chrome, or Firefox tabs)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "dcluomax", email = "1477354+dcluomax@users.noreply.github.com" },
+]
+keywords = ["mcp", "browser-automation", "ai-agent", "chrome-extension", "firefox-addon"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/dcluomax/browser-bridge"
+Repository = "https://github.com/dcluomax/browser-bridge"
+Documentation = "https://github.com/dcluomax/browser-bridge/wiki"
+Issues = "https://github.com/dcluomax/browser-bridge/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["browser_bridge*"]

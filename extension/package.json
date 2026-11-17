@@ -1,0 +1,41 @@
+{
+  "name": "browser-bridge-extension",
+  "version": "0.7.0",
+  "private": true,
+  "license": "MIT",
+  "author": "dcluomax <1477354+dcluomax@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dcluomax/browser-bridge.git",
+    "directory": "extension"
+  },
+  "homepage": "https://github.com/dcluomax/browser-bridge",
+  "bugs": {
+    "url": "https://github.com/dcluomax/browser-bridge/issues"
+  },
+  "type": "module",
+  "description": "Cross-browser extension that lets local AI agents read and act in tabs the user shares.",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/keys.test.ts test/locators.test.ts test/page.test.mjs test/tabs.test.mjs test/manifest.test.mjs test/prompt.test.ts test/i18n.test.ts",
+    "lint:firefox": "npx --yes web-ext@10.8.0 lint --source-dir dist/firefox --self-hosted",
+    "run:firefox": "npx --yes web-ext@10.8.0 run --source-dir dist/firefox",
+    "sign:firefox": "npx --yes web-ext@10.8.0 sign --source-dir dist/firefox --channel unlisted --artifacts-dir dist/signed",
+    "package": "node build.mjs --zip"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.11-canary.ed0adf3",
+    "@astryxdesign/theme-neutral": "0.7.11-canary.ed0adf3",
+    "@stylexjs/stylex": "^0.19.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

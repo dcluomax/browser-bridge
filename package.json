@@ -1,0 +1,48 @@
+{
+  "name": "browser-bridge-monorepo",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Local MCP server, native messaging host, cross-browser extension, and Python SDK that let AI agents read and act in your own signed-in Edge, Chrome, or Firefox tabs.",
+  "license": "MIT",
+  "author": "dcluomax <1477354+dcluomax@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dcluomax/browser-bridge.git"
+  },
+  "homepage": "https://github.com/dcluomax/browser-bridge",
+  "bugs": {
+    "url": "https://github.com/dcluomax/browser-bridge/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "browser-automation",
+    "ai-agents",
+    "github-copilot",
+    "claude",
+    "cursor",
+    "chrome-extension",
+    "edge-extension",
+    "firefox-addon",
+    "webmcp",
+    "rust",
+    "python"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "sanitize:check": "node scripts/check-sanitized.mjs",
+    "build:extension": "npm --prefix extension run build",
+    "package:extension": "npm --prefix extension run package",
+    "typecheck": "npm --prefix extension run typecheck",
+    "test:extension": "npm --prefix extension test",
+    "test:rust": "cargo test --manifest-path rust/Cargo.toml",
+    "build:rust": "cargo build --release --manifest-path rust/Cargo.toml",
+    "build": "npm run build:extension && npm run build:rust",
+    "test": "npm run sanitize:check && npm run typecheck && npm run test:extension && npm run test:rust",
+    "e2e:edge": "node e2e/run.mjs --browser edge",
+    "e2e:chrome": "node e2e/run.mjs --browser chrome",
+    "e2e:firefox": "node e2e/run.mjs --browser firefox"
+  }
+}

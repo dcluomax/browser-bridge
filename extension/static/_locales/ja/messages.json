@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "Browser Bridge — AI ブラウザブリッジ" },
+  "extDescription": { "message": "開いているブラウザタブを読取専用または読み書き権限でローカル AI Agent に安全に共有します。" }
+}

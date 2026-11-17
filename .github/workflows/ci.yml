@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: Sanitization & Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run sanitization & secret check
+        run: node scripts/check-sanitized.mjs
+
+  extension:
+    name: Browser Extension (MV3 & MV2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: extension/package-lock.json
+      - name: Install dependencies
+        working-directory: extension
+        run: npm ci
+      - name: TypeScript typecheck
+        working-directory: extension
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: extension
+        run: npm test
+      - name: Build & package Chromium + Firefox bundles
+        working-directory: extension
+        run: npm run package
+      - name: Upload extension artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-bridge-extensions
+          path: extension/dist/artifacts/*
+
+  rust:
+    name: Rust Host & MCP (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Run workspace unit tests
+        working-directory: rust
+        run: cargo test --workspace
+      - name: Build release binary
+        working-directory: rust
+        run: cargo build --release -p browser-bridge
+
+  python:
+    name: Python SDK (${{ matrix.os }} · Py ${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install SDK in editable/local mode
+        run: python -m pip install ./python
+      - name: Run Python SDK unit tests
+        run: python -m unittest discover -s python/tests -v

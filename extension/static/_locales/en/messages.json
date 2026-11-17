@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "Browser Bridge for AI Agents" },
+  "extDescription": { "message": "Share live browser tabs with local AI agents (read-only or read-write) through a native host." }
+}

@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-host:
+    name: Build Host (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+            bin: BrowserBridge.exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            label: windows-arm64
+            bin: BrowserBridge.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+            bin: BrowserBridge
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+            bin: BrowserBridge
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build release host
+        working-directory: rust
+        run: cargo build --release --target ${{ matrix.target }} -p browser-bridge
+      - name: Stage binary archive
+        shell: bash
+        run: |
+          mkdir -p stage dist-host
+          cp "rust/target/${{ matrix.target }}/release/${{ matrix.bin }}" stage/
+          cp README.md LICENSE docs/AGENT.md stage/
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            (cd stage && 7z a "../dist-host/browser-bridge-${{ matrix.label }}.zip" .)
+          else
+            tar -czf "dist-host/browser-bridge-${{ matrix.label }}.tar.gz" -C stage .
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-${{ matrix.label }}
+          path: dist-host/*
+
+  build-extensions-and-sdk:
+    name: Build Extensions & Python Wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: extension/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Package Chromium (.zip) & Firefox (.xpi)
+        working-directory: extension
+        run: |
+          npm ci
+          npm run package
+      - name: Build Python sdist & wheel
+        run: |
+          python -m pip install build
+          python -m build python --outdir dist-python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extensions-and-python
+          path: |
+            extension/dist/artifacts/*
+            dist-python/*
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-host, build-extensions-and-sdk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*

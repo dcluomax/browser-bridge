@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-labelledby="onboard-title onboard-desc">
+  <title id="onboard-title">Browser Bridge 60-Second Onboarding Flow</title>
+  <desc id="onboard-desc">Four-step onboarding diagram: Step 1 run the installer script, Step 2 load unpacked extension once, Step 3 share a tab in Read-Only or Read-Write mode, Step 4 prompt your MCP agent or Python script.</desc>
+  <rect width="1200" height="320" rx="18" fill="#0f172a"/>
+  <rect x="1" y="1" width="1198" height="318" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
+
+  <text x="40" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">60-Second Onboarding — Out of the Box</text>
+  <text x="455" y="44" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14">No browser drivers · No Docker containers · No API tokens · No re-login</text>
+
+  <g transform="translate(36, 72)">
+    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.3"/>
+    <circle cx="34" cy="34" r="16" fill="#0284c7"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">1</text>
+    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Run 1-Line Installer</text>
+    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Builds extension + Rust host and registers MCP:</text>
+    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="26" y="116" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11.5">.\scripts\install.ps1 \</text>
+    <text x="26" y="138" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11.5">  -RegisterAllMcp</text>
+    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">macOS / Linux: `./scripts/install.sh --register-all`</text>
+  </g>
+
+  <g transform="translate(324, 72)">
+    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#818cf8" stroke-width="1.3"/>
+    <circle cx="34" cy="34" r="16" fill="#4f46e5"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">2</text>
+    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Load Extension Once</text>
+    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Enable Developer Mode and load the stable copy:</text>
+    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="26" y="116" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">edge://extensions</text>
+    <text x="26" y="138" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">chrome://extensions</text>
+    <text x="20" y="182" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="12">Toolbar icon turns green when host connects</text>
+  </g>
+
+  <g transform="translate(612, 72)">
+    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#10b981" stroke-width="1.3"/>
+    <circle cx="34" cy="34" r="16" fill="#059669"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">3</text>
+    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Share Specific Tab</text>
+    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Click popup or right-click page to grant access:</text>
+    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <rect x="28" y="106" width="96" height="32" rx="7" fill="#064e3b" stroke="#10b981"/>
+    <text x="76" y="127" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Only</text>
+    <rect x="136" y="106" width="100" height="32" rx="7" fill="#1e3a8a" stroke="#3b82f6"/>
+    <text x="186" y="127" text-anchor="middle" fill="#bfdbfe" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Write</text>
+    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">All other personal tabs stay invisible</text>
+  </g>
+
+  <g transform="translate(900, 72)">
+    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#f59e0b" stroke-width="1.3"/>
+    <circle cx="34" cy="34" r="16" fill="#d97706"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">4</text>
+    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Prompt Your Agent</text>
+    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Copy the 1-line prompt or ask your agent directly:</text>
+    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="26" y="116" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_snapshot(tabId=42)</text>
+    <text x="26" y="138" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_click(ref="e12")</text>
+    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Auto-learns site speedups &amp; routines</text>
+  </g>
+</svg>

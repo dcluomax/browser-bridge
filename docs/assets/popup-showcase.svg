@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-labelledby="popup-title popup-desc">
+  <title id="popup-title">Browser Bridge Extension Popup Interface — Tab Sharing and Security Settings</title>
+  <desc id="popup-desc">Side-by-side visual showcase of the Browser Bridge toolbar popup: Main tab sharing view with Read-Only and Read-Write mode selector, Copy Agent Prompt button, and Shared Tabs list on the left; Security and Profile Settings panel on the right.</desc>
+  <rect width="1200" height="520" rx="18" fill="#0b1120"/>
+  <rect x="1" y="1" width="1198" height="518" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
+
+  <text x="44" y="42" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">Toolbar Extension Popup — Granular Tab Control &amp; Security Gates</text>
+  <text x="770" y="42" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14">Built with React 19 + Astryx · Dark/Light · EN / 中文 / 日本語</text>
+
+  <g transform="translate(56, 66)">
+    <rect width="510" height="422" rx="16" fill="#141821" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="28" cy="30" r="6" fill="#22c55e"/>
+    <text x="44" y="35" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Browser Bridge</text>
+    <rect x="172" y="18" width="142" height="24" rx="12" fill="#052e16" stroke="#16a34a"/>
+    <text x="243" y="34" text-anchor="middle" fill="#86efac" font-family="ui-monospace, Consolas, monospace" font-size="11.5" font-weight="600">edge · a1b2c3d4e5f6</text>
+
+    <rect x="378" y="16" width="52" height="28" rx="8" fill="#1e293b" stroke="#475569"/>
+    <text x="404" y="34" text-anchor="middle" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600">EN ▾</text>
+    <rect x="438" y="16" width="52" height="28" rx="8" fill="#1e293b" stroke="#475569"/>
+    <text x="464" y="34" text-anchor="middle" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12" font-weight="600">Gear</text>
+
+    <rect x="20" y="60" width="470" height="176" rx="12" fill="#1e2433" stroke="#3b82f6" stroke-width="1.3"/>
+    <text x="38" y="84" fill="#93c5fd" font-family="system-ui, sans-serif" font-size="11.5" font-weight="700" letter-spacing="0.6">CURRENT TAB · SHARED WITH AI</text>
+    <rect x="412" y="69" width="60" height="22" rx="6" fill="#1d4ed8"/>
+    <text x="442" y="84" text-anchor="middle" fill="#ffffff" font-family="ui-monospace, Consolas, monospace" font-size="11" font-weight="700">AI · RW</text>
+
+    <text x="38" y="111" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15" font-weight="700">Fix retry queue race condition · Pull Request #104</text>
+    <text x="38" y="131" fill="#94a3b8" font-family="ui-monospace, Consolas, monospace" font-size="12">https://github.com/example-org/service/pull/104</text>
+
+    <rect x="38" y="146" width="214" height="34" rx="8" fill="#0f172a" stroke="#334155"/>
+    <text x="90" y="167" text-anchor="middle" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12.5" font-weight="600">Read-Only</text>
+    <rect x="142" y="149" width="107" height="28" rx="6" fill="#2563eb"/>
+    <text x="195" y="167" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="12.5" font-weight="700">Read-Write</text>
+
+    <rect x="264" y="146" width="132" height="34" rx="8" fill="#0f172a" stroke="#38bdf8"/>
+    <text x="330" y="167" text-anchor="middle" fill="#7dd3fc" font-family="system-ui, sans-serif" font-size="12.5" font-weight="700">Copy Prompt</text>
+
+    <rect x="404" y="146" width="70" height="34" rx="8" fill="#3f1d24" stroke="#f43f5e"/>
+    <text x="439" y="167" text-anchor="middle" fill="#fda4af" font-family="system-ui, sans-serif" font-size="12.5" font-weight="700">Revoke</text>
+
+    <text x="38" y="214" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11">Prompt: Browser Bridge tab 42 [read-write] (edge a1b2c3d4e5f6)...</text>
+
+    <text x="24" y="264" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="0.6">SHARED TAB INVENTORY (2)</text>
+
+    <rect x="20" y="278" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <circle cx="42" cy="306" r="12" fill="#064e3b"/>
+    <text x="42" y="311" text-anchor="middle" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="12" font-weight="700">G</text>
+    <text x="64" y="302" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">API Latency Dashboard — Grafana</text>
+    <text x="64" y="320" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">metrics.example.com · Shared by you</text>
+    <rect x="382" y="294" width="92" height="24" rx="6" fill="#064e3b"/>
+    <text x="428" y="310" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="11.5" font-weight="700">READ-ONLY</text>
+
+    <rect x="20" y="344" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <circle cx="42" cy="372" r="12" fill="#312e81"/>
+    <text x="42" y="377" text-anchor="middle" fill="#c7d2fe" font-family="system-ui, sans-serif" font-size="12" font-weight="700">D</text>
+    <text x="64" y="368" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="600">System Architecture.drawio — diagrams.net</text>
+    <text x="64" y="386" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">app.diagrams.net · In use by copilot-mcp</text>
+    <rect x="382" y="360" width="92" height="24" rx="6" fill="#1e3a8a"/>
+    <text x="428" y="376" text-anchor="middle" fill="#bfdbfe" font-family="system-ui, sans-serif" font-size="11.5" font-weight="700">ACTIVE LEASE</text>
+  </g>
+
+  <g transform="translate(634, 66)">
+    <rect width="510" height="422" rx="16" fill="#141821" stroke="#334155" stroke-width="1.5"/>
+    <text x="26" y="35" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Profile &amp; Permission Settings</text>
+    <text x="364" y="35" fill="#7dd3fc" font-family="system-ui, sans-serif" font-size="12.5" font-weight="600">Per-Browser Profile</text>
+
+    <rect x="20" y="56" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <text x="36" y="79" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="700">Global Read-Only Lock</text>
+    <text x="36" y="98" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Blocks all clicks, typing, navigation, and tab mutations</text>
+    <rect x="428" y="72" width="44" height="24" rx="12" fill="#334155"/>
+    <circle cx="440" cy="84" r="9" fill="#cbd5e1"/>
+
+    <rect x="20" y="122" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <text x="36" y="145" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="700">Trusted Mouse &amp; Keyboard Input (Chromium)</text>
+    <text x="36" y="164" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Uses chrome.debugger for real user activation gestures</text>
+    <rect x="428" y="138" width="44" height="24" rx="12" fill="#2563eb"/>
+    <circle cx="460" cy="150" r="9" fill="#ffffff"/>
+
+    <rect x="20" y="188" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <text x="36" y="211" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="700">Group Agent-Opened Tabs in Background</text>
+    <text x="36" y="230" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Places agent tabs in a collapsed [Agent] group without focus steal</text>
+    <rect x="428" y="204" width="44" height="24" rx="12" fill="#2563eb"/>
+    <circle cx="460" cy="216" r="9" fill="#ffffff"/>
+
+    <rect x="20" y="254" width="470" height="56" rx="10" fill="#1a202c" stroke="#334155"/>
+    <text x="36" y="277" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="700">Let Agents Use Any Tab</text>
+    <text x="36" y="296" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Off by default — agents see only shared or agent-opened tabs</text>
+    <rect x="428" y="270" width="44" height="24" rx="12" fill="#334155"/>
+    <circle cx="440" cy="282" r="9" fill="#cbd5e1"/>
+
+    <rect x="20" y="320" width="470" height="50" rx="10" fill="#1a202c" stroke="#334155"/>
+    <text x="36" y="341" fill="#f1f5f9" font-family="system-ui, sans-serif" font-size="13.5" font-weight="700">Allow Arbitrary Page Scripts (`browser_evaluate`)</text>
+    <text x="36" y="359" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">Dual-gated: off by default + requires `mcp --allow-evaluate`</text>
+    <rect x="428" y="333" width="44" height="24" rx="12" fill="#334155"/>
+    <circle cx="440" cy="345" r="9" fill="#cbd5e1"/>
+
+    <text x="24" y="400" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13" font-weight="600">Profile Label:</text>
+    <rect x="122" y="381" width="180" height="30" rx="7" fill="#0f172a" stroke="#475569"/>
+    <text x="136" y="401" fill="#f8fafc" font-family="ui-monospace, Consolas, monospace" font-size="13">Work</text>
+    <text x="316" y="400" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Select via `browser="Work"`</text>
+  </g>
+</svg>

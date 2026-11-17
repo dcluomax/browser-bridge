@@ -1,0 +1,6 @@
+{
+  "nativeHostName": "io.github.dcluomax.browser_bridge",
+  "geckoId": "browser-bridge@dcluomax.github.io",
+  "chromiumPublicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtYbEp+MiEgCjTKXTouzjS2l1oN615yubsQBGYuNKkgI5VsCNte2aP+OestSXUY4mOuNq8CpyPNhL0RbPOi92LsWO+F+71tssLmcOPVsohTlJGjSMyf1G+C1Zvz3Ty1DSTmWnqdLKA9rbMiwvZOmMQ9WQ6m+ErD4AceFAMeU8i7at+eoF3c6CgFfQKorGbF9a2Yw8a61LXcQ6v5Al/sKhCNHECq9WYeRMDyrOgmmDtaXHIugpkN14RwNAjTa7GbM0YS7fnToTH7Z312yJWyjRqd8W4A0qIe+AiALLM5oSzTxgzOu5VOzSH5BSLP0Cx8F7Mv1sMZCY8a2C0MA4wNANIwIDAQAB",
+  "chromiumExtensionId": "ggkciaoahjoickdapninkfaceeadombm"
+}

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Playwright subset fixture</title>
+    <style>
+      body { font: 16px system-ui, sans-serif; margin: 20px; }
+      .cover { position: relative; width: 140px; height: 40px; }
+      .cover button { width: 100%; height: 100%; }
+      .overlay { position: absolute; inset: 0; z-index: 1; background: #ddd; }
+    </style>
+  </head>
+  <body>
+    <h1>Playwright subset fixture</h1>
+    <label for="name">Full name</label>
+    <input id="name" placeholder="Your full name" data-testid="name" title="Name hint" />
+    <label for="password">Password</label>
+    <input id="password" type="password" value="fixture-password-not-for-output" />
+    <label><input id="agree" type="checkbox" /> Agree</label>
+    <label><input id="blocked-check" type="checkbox" /> Prevented checkbox</label>
+    <select id="color" aria-label="Color" data-testid="color">
+      <option value="red">Red</option><option value="green">Green</option><option value="blue">Blue</option>
+    </select>
+    <button id="increment" type="button" data-testid="increment">Increment</button>
+    <output id="count" data-count="0">0</output>
+    <button id="replace" type="button">Replace input</button>
+    <section role="region" aria-label="Items">
+      <ul>
+        <li data-testid="item"><span>First item</span> <button type="button">Choose</button></li>
+        <li data-testid="item"><span>Second item</span> <button type="button">Choose</button></li>
+      </ul>
+    </section>
+    <output id="chosen"></output>
+    <button class="duplicate" type="button">Duplicate</button>
+    <button class="duplicate" type="button">Duplicate</button>
+    <button id="long-name" type="button"></button>
+    <img alt="Fixture image" width="1" height="1" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+    <shadow-box></shadow-box>
+    <div>
+      <label for="delayed-input">Delayed input</label>
+      <input id="delayed-input" disabled readonly />
+      <button id="enable" type="button">Enable input</button>
+      <button id="reveal" type="button">Reveal</button>
+      <button id="remove" type="button">Remove</button>
+      <div id="transient" style="display:none">Transient content</div>
+      <button id="hidden-button" type="button" style="display:none">Hidden action</button>
+    </div>
+    <div class="cover"><button id="covered" type="button">Covered</button><div class="overlay">Overlay</div></div>
+    <output id="keys">none</output>
+    <input id="upload-file" type="file" aria-label="Upload file" />
+    <output id="uploaded-info"></output>
+    <button id="confirm-btn" type="button">Ask confirm</button>
+    <output id="confirm-out"></output>
+    <form id="quote-form" toolname="lookup_quote" tooldescription="Look up ticker quote" method="get">
+      <input name="symbol" required toolparamdescription="Ticker symbol" />
+      <select name="range"><option value="1d">1D</option><option value="1y">1Y</option></select>
+    </form>
+    <output id="quote-activated"></output>
+    <svg id="diagram-canvas" width="240" height="90">
+      <defs><text>Hidden template</text></defs>
+      <g><rect x="10" y="10" width="90" height="40" fill="#eef" /><foreignObject x="10" y="10" width="90" height="40"><div>Kafka Node</div></foreignObject></g>
+      <g><circle cx="160" cy="30" r="20" fill="#efe" /><text x="145" y="35">Spark Sink</text></g>
+    </svg>
+    <div id="drag-src" style="display:inline-block;width:50px;height:30px;background:#cde">DragMe</div>
+    <div id="drag-dst" style="display:inline-block;width:60px;height:30px;margin-left:40px;background:#edc">DropHere</div>
+    <output id="drag-out"></output>
+    <iframe id="frame" title="Cross origin" width="320" height="90"></iframe>
+    <div id="scroll-tail" style="margin-top:2000px;height:80px;background:#eef">Bottom marker</div>
+    <script>
+      const byId = (id) => document.getElementById(id);
+      byId('frame').src = `${location.protocol}//localhost:${location.port}/frame.html`;
+      byId('long-name').textContent = 'Long accessible name ' + 'x'.repeat(180);
+      const increment = () => {
+        const count = byId('count');
+        count.dataset.count = String(Number(count.dataset.count) + 1);
+        count.textContent = count.dataset.count;
+      };
+      byId('increment').addEventListener('click', increment);
+      byId('covered').addEventListener('click', increment);
+      document.querySelectorAll('.duplicate').forEach((button) => button.addEventListener('click', increment));
+      document.querySelectorAll('li button').forEach((button, index) => button.addEventListener('click', () => { byId('chosen').textContent = String(index + 1); }));
+      byId('blocked-check').addEventListener('click', (event) => event.preventDefault());
+      byId('replace').addEventListener('click', () => { byId('name').replaceWith(byId('name').cloneNode()); });
+      byId('enable').addEventListener('click', () => setTimeout(() => { byId('delayed-input').disabled = false; byId('delayed-input').readOnly = false; }, 1600));
+      byId('reveal').addEventListener('click', () => setTimeout(() => { byId('transient').style.display = 'block'; }, 1600));
+      byId('remove').addEventListener('click', () => setTimeout(() => byId('transient').remove(), 1600));
+      window.addEventListener('keydown', (event) => { byId('keys').textContent = event.key; });
+      byId('upload-file').addEventListener('change', (event) => {
+        const f = event.target.files[0];
+        byId('uploaded-info').textContent = f ? `${f.name}:${f.size}` : '';
+      });
+      byId('confirm-btn').addEventListener('click', () => {
+        byId('confirm-out').textContent = window.confirm('Proceed with test?') ? 'accepted' : 'dismissed';
+      });
+      byId('quote-form').addEventListener('toolactivated', (event) => {
+        byId('quote-activated').textContent = `${event.detail.toolName}:${byId('quote-form').elements.symbol.value}:${byId('quote-form').elements.range.value}`;
+      });
+      let dragStart = false;
+      byId('drag-src').addEventListener('mousedown', () => { dragStart = true; });
+      byId('drag-dst').addEventListener('mouseup', () => { if (dragStart) byId('drag-out').textContent = 'dropped'; dragStart = false; });
+      if (document.modelContext && typeof document.modelContext.registerTool === 'function') {
+        document.modelContext.registerTool({
+          name: 'read_counter',
+          description: 'Reads the current counter value safely.',
+          inputSchema: { type: 'object', properties: {} },
+          annotations: { readOnlyHint: true },
+          execute: () => ({ count: Number(byId('count').dataset.count || 0) }),
+        });
+        document.modelContext.registerTool({
+          name: 'bump_counter',
+          description: 'Increments the counter by delta.',
+          inputSchema: { type: 'object', properties: { delta: { type: 'number' } }, required: ['delta'] },
+          annotations: { readOnlyHint: false, consequentialHint: true },
+          execute: ({ delta }) => {
+            const next = Number(byId('count').dataset.count || 0) + Number(delta || 1);
+            byId('count').dataset.count = String(next);
+            byId('count').textContent = String(next);
+            return { count: next };
+          },
+        });
+      }
+      customElements.define('shadow-box', class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: 'open' }).innerHTML = '<button type="button">Shadow choice</button><span>Shadow text</span>';
+        }
+      });
+    </script>
+  </body>
+</html>

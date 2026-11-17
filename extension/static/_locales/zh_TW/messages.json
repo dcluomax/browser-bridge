@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "Browser Bridge — AI 瀏覽器橋接" },
+  "extDescription": { "message": "將目前瀏覽器分頁依唯讀或讀寫權限安全分享給本機 AI Agent。" }
+}
