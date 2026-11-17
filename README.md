@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="docs/assets/hero-banner.svg" alt="Browser Bridge — Local MCP Server, Browser Extension, and Python SDK for Your Signed-In Tabs" width="100%" />
+<img src="docs/assets/hero-banner.svg" alt="Browser Bridge — Local, Secure, Fast, Self-Evolving Browser Automation for AI Agents" width="100%" />
 
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
+[![100% Local](https://img.shields.io/badge/100%25%20Local-0%20Cloud%20Relay-0284c7)](#four-core-pillars-local--secure--fast--self-evolving)
+[![Zero-Port Secure](https://img.shields.io/badge/Secure-0%20TCP%20Ports%20%7C%203--Layer%20ACL-059669)](docs/SECURITY_MODEL.md)
+[![Native Fast](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20Pipe%20IPC-d97706)](#four-core-pillars-local--secure--fast--self-evolving)
+[![Self-Evolving](https://img.shields.io/badge/Self--Evolving-SiteLearner%20%2B%20Routines-6366f1)](docs/FEATURES.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.85%2B-0f172a?logo=rust)](rust/Cargo.toml)
-[![Python](https://img.shields.io/badge/Python-3.10%2B%20(0%20deps)-0f172a?logo=python)](python/README.md)
-[![Browsers](https://img.shields.io/badge/Browsers-Edge%20%7C%20Chrome%20%7C%20Brave%20%7C%20Firefox-059669)](#browser-setup)
-[![MCP](https://img.shields.io/badge/MCP-2025--06--18-6366f1)](docs/MCP_CLIENTS.md)
 
 **English** · **[简体中文](README.zh-CN.md)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[MCP Client Setup](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
@@ -17,22 +17,31 @@
 
 ---
 
-**Browser Bridge** lets local AI coding agents (GitHub Copilot, Claude Desktop / Claude Code, Cursor, Windsurf, Cline, or any MCP client) and local Python scripts safely inspect and act inside **your own live Edge, Chrome, Brave, or Firefox tabs** — using the accounts, SSO sessions, cookies, and browser extensions you already have open.
+**Browser Bridge** is a **100% Local, Zero-Port Secure, Native-Rust FAST, and Self-Evolving** browser bridge that lets AI coding agents (GitHub Copilot, Claude Desktop / Claude Code, Cursor, Windsurf, Cline, or any MCP client) and Python scripts act safely inside **your own live Edge, Chrome, Brave, or Firefox tabs** — using the accounts, SSO sessions, cookies, and extensions you already have open.
 
-Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or containerized cloud browsers, Browser Bridge **never launches an isolated profile, never exports cookies, and opens zero TCP or WebSocket ports**. Every tab stays private until you explicitly share it.
+Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or cloud browser sandboxes, Browser Bridge **never launches an isolated profile, never exports cookies, opens zero TCP/WebSocket ports, executes over ~1.1 ms native OS pipes, and automatically learns per-website speedups and recovery routines from real errors**.
 
 ---
 
-## Why Browser Bridge?
+## Four Core Pillars: Local · Secure · FAST · Self-Evolving
+
+| Pillar | Architecture Guarantee | Real-World Impact |
+| --- | --- | --- |
+| **1. 100% LOCAL** | Runs strictly on your machine inside your daily browser — zero cloud relays, zero remote containers, zero WebDriver downloads | Instant access to your live corporate SSO, MFA sessions, cookies, and extensions with zero re-login friction |
+| **2. ZERO-PORT SECURE** | **0 open TCP/WebSocket ports**; OS-authenticated Windows SID Named Pipes (`CurrentUserOnly`) & `0700`/`0600` Unix sockets + **3-layer Read-Only / Read-Write ACLs** + password/JWT redaction | Web pages and other OS users cannot reach the bridge; unshared personal tabs remain completely invisible |
+| **3. NATIVE FAST** | **~1.5 MB standalone Rust binary** (~8 MB RAM), **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM content engine, background focus-free screenshots, and 0-dependency Python SDK | Sub-millisecond local IPC with zero Node/Python driver bloat or browser startup overhead |
+| **4. SELF-EVOLVING** | Error-driven **`SiteLearner`** + persistent **Site Memory Routines** + native W3C **WebMCP (`document.modelContext`)** | Every timeout, SPA hydration race, cookie-wall blocker, or `403` WAF block teaches a permanent domain playbook so repeat tasks finish in 1 call |
+
+### Headless Drivers vs. Browser Bridge
 
 | Capability | Headless Drivers (Playwright / CDP Port) | Browser Bridge |
 | --- | --- | --- |
-| **Signed-in SSO & corporate sessions** | Loses session or requires fragile profile cloning | Works directly in your live signed-in browser |
-| **Network attack surface** | Localhost debugging port reachable by local processes/pages | **0 TCP ports** — OS user-isolated Named Pipes / `0600` Unix sockets |
-| **Tab privacy boundary** | Exposes the entire browser context | **Opt-in per tab** (`[read-only]` or `[read-write]` + exclusive lease) |
-| **Repeat-visit speed on complex sites** | Static timeouts & repeated failures | **Adaptive `SiteLearner`** + reusable multi-step **Site Memory Routines** |
+| **Signed-in SSO & corporate sessions** | Loses session or requires fragile profile cloning | **100% Local** — works directly in your live signed-in browser |
+| **Network attack surface** | Localhost debugging port reachable by local processes/pages | **Zero-Port Secure** — 0 TCP ports; OS user-isolated Named Pipes / `0600` sockets |
+| **Tab privacy boundary** | Exposes the entire browser context | **3-Layer ACL** — opt-in per tab (`[read-only]` or `[read-write]` + exclusive lease) |
+| **IPC & runtime speed** | Heavy browser binary + multi-process driver hop | **Native FAST** — ~1.5 MB Rust binary, `~1.1 ms` Direct Pipe RTT, 0-dep Python SDK |
+| **Repeat-visit intelligence** | Static timeouts; repeats the same detours forever | **Self-Evolving** — `SiteLearner` adapts wait modes, blocker recovery & 1-call Routines |
 | **Native W3C WebMCP support** | None | Discovers & invokes `document.modelContext` and declarative `<form toolname>` tools |
-| **Host footprint** | Hundreds of MBs of browser binaries + Node/Python drivers | **~1.5 MB standalone Rust binary** + **0-dependency Python SDK** |
 
 ---
 

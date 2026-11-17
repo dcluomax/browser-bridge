@@ -1,59 +1,78 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-labelledby="onboard-title onboard-desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 348" width="1280" height="348" role="img" aria-labelledby="onboard-title onboard-desc">
   <title id="onboard-title">Browser Bridge One-Prompt Onboarding Flow</title>
-  <desc id="onboard-desc">Four-step onboarding diagram: Step 1 paste one prompt to your AI agent for zero-build SHA-256-verified installation, Step 2 load unpacked extension once, Step 3 share a tab in Read-Only or Read-Write mode, Step 4 prompt your MCP agent or Python script.</desc>
-  <rect width="1200" height="320" rx="18" fill="#0f172a"/>
-  <rect x="1" y="1" width="1198" height="318" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
+  <desc id="onboard-desc">Four-step onboarding diagram: Step 1 paste one prompt to your AI agent for zero-build SHA-256-verified installation, Step 2 load unpacked extension once, Step 3 share a tab in Read-Only or Read-Write mode, Step 4 run fast local actions that self-evolve per site.</desc>
 
-  <text x="40" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">1-Prompt Onboarding — Zero Build Tools Needed</text>
-  <text x="530" y="44" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14">No Rust/Node required · SHA-256 verified · No Docker · No re-login</text>
+  <rect width="1280" height="348" rx="18" fill="#0f172a"/>
+  <rect x="1" y="1" width="1278" height="346" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
 
-  <g transform="translate(36, 72)">
-    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.3"/>
-    <circle cx="34" cy="34" r="16" fill="#0284c7"/>
-    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">1</text>
-    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Paste 1 Prompt to AI</text>
-    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Tell Copilot / Claude / Cursor to run the agent guide:</text>
-    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
-    <text x="26" y="116" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11">"Install Browser Bridge</text>
-    <text x="26" y="138" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11"> via docs/INSTALL.md"</text>
-    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Downloads prebuilt binary &amp; sets up MCP</text>
+  <text x="40" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">1-Prompt Onboarding — Out of the Box</text>
+  <text x="1240" y="44" text-anchor="end" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5">Zero Build Tools · SHA-256 Verified · Local &amp; Self-Evolving</text>
+
+  <!-- Step 1 -->
+  <g transform="translate(40, 74)">
+    <rect width="276" height="238" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.4"/>
+    <circle cx="34" cy="34" r="15" fill="#0284c7"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13.5" font-weight="800">1</text>
+    <text x="58" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Paste 1 Prompt to AI</text>
+    <text x="20" y="68" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">Send one prompt to Copilot,</text>
+    <text x="20" y="87" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">Claude, Cursor, or Windsurf:</text>
+    <rect x="18" y="104" width="240" height="68" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="30" y="132" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11.5">"Install Browser Bridge</text>
+    <text x="30" y="153" fill="#7dd3fc" font-family="ui-monospace, Consolas, monospace" font-size="11.5"> via docs/INSTALL.md"</text>
+    <text x="20" y="198" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">Downloads SHA-256 prebuilt host</text>
+    <text x="20" y="217" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">&amp; auto-configures your MCP client</text>
   </g>
 
-  <g transform="translate(324, 72)">
-    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#818cf8" stroke-width="1.3"/>
-    <circle cx="34" cy="34" r="16" fill="#4f46e5"/>
-    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">2</text>
-    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Load Extension Once</text>
-    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Enable Developer Mode and load the stable copy:</text>
-    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
-    <text x="26" y="116" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">edge://extensions</text>
-    <text x="26" y="138" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">chrome://extensions</text>
-    <text x="20" y="182" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="12">Toolbar icon turns green when host connects</text>
+  <path d="M 322 193 L 342 193 M 336 187 L 342 193 L 336 199" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 2 -->
+  <g transform="translate(348, 74)">
+    <rect width="276" height="238" rx="14" fill="#1e293b" stroke="#818cf8" stroke-width="1.4"/>
+    <circle cx="34" cy="34" r="15" fill="#4f46e5"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13.5" font-weight="800">2</text>
+    <text x="58" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Load Extension Once</text>
+    <text x="20" y="68" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">Enable Developer Mode and</text>
+    <text x="20" y="87" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">load the stable local folder:</text>
+    <rect x="18" y="104" width="240" height="68" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="30" y="132" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">edge://extensions</text>
+    <text x="30" y="153" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">chrome://extensions</text>
+    <text x="20" y="198" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="11.5">Green dot confirms local IPC link</text>
+    <text x="20" y="217" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">Firefox: about:debugging add-on</text>
   </g>
 
-  <g transform="translate(612, 72)">
-    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#10b981" stroke-width="1.3"/>
-    <circle cx="34" cy="34" r="16" fill="#059669"/>
-    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">3</text>
-    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Share Specific Tab</text>
-    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Click popup or right-click page to grant access:</text>
-    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
-    <rect x="28" y="106" width="96" height="32" rx="7" fill="#064e3b" stroke="#10b981"/>
-    <text x="76" y="127" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Only</text>
-    <rect x="136" y="106" width="100" height="32" rx="7" fill="#1e3a8a" stroke="#3b82f6"/>
-    <text x="186" y="127" text-anchor="middle" fill="#bfdbfe" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Write</text>
-    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">All other personal tabs stay invisible</text>
+  <path d="M 630 193 L 650 193 M 644 187 L 650 193 L 644 199" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 3 -->
+  <g transform="translate(656, 74)">
+    <rect width="276" height="238" rx="14" fill="#1e293b" stroke="#10b981" stroke-width="1.4"/>
+    <circle cx="34" cy="34" r="15" fill="#059669"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13.5" font-weight="800">3</text>
+    <text x="58" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Share Specific Tab</text>
+    <text x="20" y="68" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">Click popup or right-click page</text>
+    <text x="20" y="87" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">to grant scoped tab access:</text>
+    <rect x="18" y="104" width="240" height="68" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <rect x="30" y="122" width="102" height="32" rx="7" fill="#064e3b" stroke="#10b981"/>
+    <text x="81" y="143" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Only</text>
+    <rect x="144" y="122" width="102" height="32" rx="7" fill="#1e3a8a" stroke="#3b82f6"/>
+    <text x="195" y="143" text-anchor="middle" fill="#bfdbfe" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Read-Write</text>
+    <text x="20" y="198" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">Other personal tabs stay hidden</text>
+    <text x="20" y="217" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">Exclusive 1-agent-at-a-time lease</text>
   </g>
 
-  <g transform="translate(900, 72)">
-    <rect width="264" height="214" rx="14" fill="#1e293b" stroke="#f59e0b" stroke-width="1.3"/>
-    <circle cx="34" cy="34" r="16" fill="#d97706"/>
-    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="800">4</text>
-    <text x="60" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="700">Prompt Your Agent</text>
-    <text x="20" y="72" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13">Copy the 1-line prompt or ask your agent directly:</text>
-    <rect x="16" y="92" width="232" height="62" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
-    <text x="26" y="116" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_snapshot(tabId=42)</text>
-    <text x="26" y="138" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_click(ref="e12")</text>
-    <text x="20" y="182" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">Auto-learns site speedups &amp; routines</text>
+  <path d="M 938 193 L 958 193 M 952 187 L 958 193 L 952 199" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Step 4 -->
+  <g transform="translate(964, 74)">
+    <rect width="276" height="238" rx="14" fill="#1e293b" stroke="#f59e0b" stroke-width="1.4"/>
+    <circle cx="34" cy="34" r="15" fill="#d97706"/>
+    <text x="34" y="39" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="13.5" font-weight="800">4</text>
+    <text x="58" y="39" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Run &amp; Self-Evolve</text>
+    <text x="20" y="68" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">Copy 1-line tab prompt or call</text>
+    <text x="20" y="87" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12.5">MCP / Python SDK directly:</text>
+    <rect x="18" y="104" width="240" height="68" rx="8" fill="#0b1120" stroke="#334155" stroke-width="1"/>
+    <text x="30" y="132" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_snapshot(tabId=42)</text>
+    <text x="30" y="153" fill="#fde68a" font-family="ui-monospace, Consolas, monospace" font-size="11.5">browser_click(ref="e12")</text>
+    <text x="20" y="198" fill="#fde68a" font-family="system-ui, sans-serif" font-size="11.5">~1.1 ms IPC · Learns site speedups</text>
+    <text x="20" y="217" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11.5">&amp; saves reusable fast routines</text>
   </g>
 </svg>

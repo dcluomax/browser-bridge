@@ -1,6 +1,13 @@
 # Browser Bridge Feature Deep Dive
 
-This document details every major subsystem in Browser Bridge `v0.7.0`: the 26 MCP tools, DOM & SVG accessibility snapshots, structured locators, Adaptive Error-Driven Site Learning (`SiteLearner`), Executable Site Memory Routines, and W3C WebMCP integration.
+Every subsystem in Browser Bridge `v0.7.0` is engineered around four core design guarantees:
+
+- **100% Local:** Runs inside your own live, signed-in Edge, Chrome, Brave, or Firefox profile with zero cloud relays and zero WebDriver browser downloads.
+- **Zero-Port Secure:** Opens **0 TCP/WebSocket ports**, authenticates over OS user-isolated Named Pipes / `0600` Unix sockets, and enforces **3-layer Read-Only / Read-Write tab ACLs** with automatic password/JWT redaction.
+- **Native FAST:** Ships as a **~1.5 MB standalone Rust binary** (~8 MB RAM) delivering **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM injection, focus-free background screenshots, and a 0-dependency Python SDK.
+- **Self-Evolving:** Passively learns per-domain navigation modes, hydration settles, and blocker workarounds via **`SiteLearner`**, replays multi-step workflows in 1 call via **Site Memory Routines**, and discovers native W3C **WebMCP (`document.modelContext`)** tools.
+
+This document details the 26 MCP tools, DOM & SVG accessibility snapshots, structured locators, Adaptive Error-Driven Site Learning (`SiteLearner`), Executable Site Memory Routines, and W3C WebMCP integration.
 
 ---
 

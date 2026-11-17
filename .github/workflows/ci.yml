@@ -27,6 +27,8 @@ jobs:
           node-version: "22"
       - name: Run sanitization & secret check
         run: node scripts/check-sanitized.mjs
+      - name: Run SVG layout & overflow check
+        run: node scripts/check-svg-layout.mjs
 
   extension:
     name: Browser Extension (MV3 & MV2)

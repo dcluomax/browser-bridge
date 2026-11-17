@@ -1,13 +1,15 @@
 <div align="center">
 
-<img src="docs/assets/hero-banner.svg" alt="Browser Bridge — 面向本地 AI Agent 与 Python 脚本的零端口浏览器桥接器" width="100%" />
+<img src="docs/assets/hero-banner.svg" alt="Browser Bridge — 本地、安全、极速、自我进化的 AI 浏览器桥接器" width="100%" />
 
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
+[![100% 本地](https://img.shields.io/badge/100%25%20Local-纯本地零云端-0284c7)](#四大核心基因本地--安全--fast--自我进化)
+[![零端口安全](https://img.shields.io/badge/Secure-零端口%20%7C%20三层读写锁-059669)](docs/SECURITY_MODEL.md)
+[![原生极速](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20直连管道-d97706)](#四大核心基因本地--安全--fast--自我进化)
+[![自我进化](https://img.shields.io/badge/Self--Evolving-错误自学习%20%2B%20例程沉淀-6366f1)](docs/FEATURES.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.85%2B-0f172a?logo=rust)](rust/Cargo.toml)
-[![Python](https://img.shields.io/badge/Python-3.10%2B%20(零依赖)-0f172a?logo=python)](python/README.md)
 
 **[English](README.md)** · **简体中文** · **[1-Prompt 安装手册](docs/INSTALL.md)** · **[完整使用指南](docs/USAGE.md)** · **[核心特性详解](docs/FEATURES.md)** · **[MCP 客户端配置](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[GitHub Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
@@ -15,9 +17,18 @@
 
 ---
 
-**Browser Bridge** 让本地 AI 编程助手（GitHub Copilot、Claude Desktop / Claude Code、Cursor、Windsurf、Cline 等任意 MCP 客户端）以及本地 Python 脚本，能够安全地在你**自己已经打开并登录的 Edge、Chrome、Brave 或 Firefox 标签页**中读取与操作页面。
+**Browser Bridge** 是一款专为 AI Agent 与开发者打造的 **纯本地（Local）、零端口安全（Secure）、原生极速（FAST）、自我进化（Self-Evolving）** 浏览器桥接引擎。它让 GitHub Copilot、Claude Desktop / Claude Code、Cursor、Windsurf、Cline 等 MCP 客户端及 Python 脚本，直接安全地运行在你**自己已打开并登录的 Edge、Chrome、Brave 或 Firefox 标签页**中。
 
-与 Playwright / Selenium 等无头浏览器驱动或云端容器浏览器不同，Browser Bridge **不会启动隔离的空白浏览器、不会导出任何 Cookie、不开放任何 TCP 或 WebSocket 端口**。你只需一键分享目标标签页，即可直接复用现有的企业 SSO、登录态与浏览器插件，其余私人标签页对 AI 完全不可见。
+---
+
+## 四大核心基因：本地 · 安全 · FAST · 自我进化
+
+| 核心维度 | 底层架构保障 | 实际体验收益 |
+| --- | --- | --- |
+| **1. 纯本地 (100% LOCAL)** | 100% 运行于本机日常浏览器内，零云端中转、零远程容器、无需下载几百 MB 无头浏览器内核 | 直接复用已登录的企业 SSO、双重验证态、Cookie 与扩展插件，告别重复扫码登录 |
+| **2. 零端口安全 (SECURE)** | **0 开放 TCP / WebSocket 端口**；采用系统内核鉴权的 Windows SID 命名管道（`CurrentUserOnly`）与 `0700`/`0600` Unix 套接字 + **三层只读/读写权限锁** + 密码/Token 自动脱敏 | 外部网页与本机其他账户完全无法探测；仅你主动分享的标签页可见，其余私人页面彻底隐身 |
+| **3. 原生极速 (FAST)** | **~1.5 MB 零依赖单文件 Rust 宿主**（运行内存仅 ~8 MB），**`~1.1 ms` 管道直连中位延迟**，单次往返按需 DOM 引擎 + 后台无感全页截图 + 零依赖 Python SDK | 亚毫秒级本机通信，无中间子进程开销、不抢占前台窗口焦点 |
+| **4. 自我进化 (SELF-EVOLVING)** | 错误驱动学习引擎 **`SiteLearner`** + 本机站点记忆例程（**Site Memory Routines**）+ 原生 W3C **WebMCP (`document.modelContext`)** | 首次访问遇到 `onload` 阻塞、SPA 水合重绘、遮罩弹窗阻挡或 `403` WAF 拦截后自动学会最优策略并沉淀为一句话例程，越用越快 |
 
 ---
 

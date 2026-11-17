@@ -25,9 +25,9 @@ Welcome to the official **Browser Bridge Wiki**!
   <img src="https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/assets/architecture.svg" alt="Browser Bridge system architecture and security isolation" width="100%" />
 </p>
 
-### Core Design Pillars
+### Four Core Pillars: Local · Secure · FAST · Self-Evolving
 
-1. **Use Your Real Browser & SSO:** No headless browser downloads, no profile cloning, and no cookie export. Sign in once in your normal browser and share only the specific tab you want an agent to read or assist with.
-2. **Zero Network Exposure:** Communication uses OS-enforced `CurrentUserOnly` Windows Named Pipes (`\\.\pipe\browser-bridge.<SID>.*`) and `0700`/`0600` Unix Domain Sockets — never localhost HTTP or WebSocket ports.
-3. **Three-Layer Read/Write Safety:** Enforce read-only inspection via `BrowserBridge mcp --read-only`, the popup Global Read-Only Lock, or per-tab `Read-Only` / `Read-Write` grants.
-4. **Adaptive Site Memory & WebMCP:** `SiteLearner` turns first-visit timeouts, SPA hydration races, overlay blockers, and `403` WAF blocks into sub-second domain playbooks, alongside reusable multi-step routines and W3C `document.modelContext` WebMCP tool invocation.
+1. **100% LOCAL — Your Real Browser & SSO:** Zero cloud relays, zero remote containers, and zero browser driver downloads. Sign in once in your normal browser and share only the specific tab you want an agent to read or assist with.
+2. **ZERO-PORT SECURE — OS Isolation & 3-Layer ACLs:** Communication uses OS-enforced `CurrentUserOnly` Windows Named Pipes (`\\.\pipe\browser-bridge.<SID>.*`) and `0700`/`0600` Unix Domain Sockets — never localhost HTTP or WebSocket ports — backed by `--read-only`, Global Read-Only Lock, per-tab `Read-Only`/`Read-Write` grants, and automatic credential redaction.
+3. **NATIVE FAST — ~1.5 MB Rust Binary & ~1.1 ms IPC:** Standalone native Rust host (~8 MB RAM) paired with a zero-dependency Python SDK over direct OS pipes (`~1.1 ms` median RTT), 1-RTT lazy DOM snapshots, and background focus-free screenshots.
+4. **SELF-EVOLVING — `SiteLearner`, Routines & WebMCP:** Automatically turns first-visit timeouts, SPA hydration races, overlay blockers, and `403` WAF blocks into sub-second domain playbooks, reusable 1-call routines, and W3C `document.modelContext` WebMCP tool calls.

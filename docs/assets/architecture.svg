@@ -1,120 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 490" width="1200" height="490" role="img" aria-labelledby="arch-title arch-desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 500" width="1280" height="500" role="img" aria-labelledby="arch-title arch-desc">
   <title id="arch-title">Browser Bridge System Architecture and Local Security Boundary</title>
-  <desc id="arch-desc">Architecture diagram showing AI MCP clients and the Python SDK talking over current-user-only Named Pipes or 0600 Unix domain sockets to the Rust Native Host, which communicates via browser Native Messaging stdio with the Browser Extension controlling user-shared tabs.</desc>
-  <defs>
-    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#38bdf8"/>
-    </marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#34d399"/>
-    </marker>
-  </defs>
+  <desc id="arch-desc">Architecture diagram showing AI MCP clients and the Python SDK talking over current-user-only Named Pipes or 0600 Unix domain sockets to the Rust Native Host and Self-Evolving SiteLearner, which communicates via browser Native Messaging stdio with the Browser Extension controlling user-shared tabs.</desc>
 
-  <rect width="1200" height="490" rx="18" fill="#0f172a"/>
-  <rect x="1" y="1" width="1198" height="488" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
+  <rect width="1280" height="500" rx="18" fill="#0f172a"/>
+  <rect x="1" y="1" width="1278" height="498" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
 
-  <text x="40" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="700">Zero-Port Local Architecture &amp; Security Isolation</text>
-  <rect x="742" y="19" width="418" height="32" rx="16" fill="#064e3b" stroke="#10b981" stroke-width="1.2"/>
-  <text x="951" y="40" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">0 Open TCP / WebSocket Ports — Web Pages Cannot Reach Host</text>
+  <text x="36" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">Local, Zero-Port Architecture &amp; Security Isolation</text>
+  <rect x="748" y="18" width="496" height="34" rx="17" fill="#064e3b" stroke="#10b981" stroke-width="1.2"/>
+  <text x="996" y="40" text-anchor="middle" fill="#a7f3d0" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">0 Open TCP / WebSocket Ports — 100% Local OS-Isolated IPC</text>
 
-  <g transform="translate(36, 76)">
-    <rect width="248" height="374" rx="14" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
+  <!-- Column 1: Local Clients -->
+  <g transform="translate(36, 78)">
+    <rect width="268" height="384" rx="14" fill="#1e293b" stroke="#475569" stroke-width="1.2"/>
     <text x="20" y="34" fill="#7dd3fc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700">1. Local Clients</text>
 
-    <rect x="18" y="52" width="212" height="86" rx="10" fill="#0f172a" stroke="#38bdf8" stroke-width="1.2"/>
-    <text x="32" y="76" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" font-weight="700">MCP AI Agents</text>
-    <text x="32" y="98" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5">GitHub Copilot · VS Code</text>
-    <text x="32" y="118" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5">Claude · Cursor · Windsurf</text>
+    <rect x="16" y="52" width="236" height="88" rx="10" fill="#0f172a" stroke="#38bdf8" stroke-width="1.2"/>
+    <text x="30" y="76" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">MCP AI Agents</text>
+    <text x="30" y="98" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">GitHub Copilot · VS Code</text>
+    <text x="30" y="118" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Claude · Cursor · Windsurf</text>
 
-    <rect x="18" y="154" width="212" height="96" rx="10" fill="#0f172a" stroke="#818cf8" stroke-width="1.2"/>
-    <text x="32" y="178" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" font-weight="700">Python SDK (0 Deps)</text>
-    <text x="32" y="200" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="12">with BrowserBridge() as b:</text>
-    <text x="32" y="219" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Direct IPC (~1.1 ms median RTT)</text>
-    <text x="32" y="237" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Locators · smart_fetch · Routines</text>
+    <rect x="16" y="156" width="236" height="98" rx="10" fill="#0f172a" stroke="#818cf8" stroke-width="1.2"/>
+    <text x="30" y="180" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Python SDK (0 Deps · FAST)</text>
+    <text x="30" y="201" fill="#c7d2fe" font-family="ui-monospace, Consolas, monospace" font-size="11.5">with BrowserBridge() as b:</text>
+    <text x="30" y="220" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Direct IPC (~1.1 ms median RTT)</text>
+    <text x="30" y="239" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Locators · smart_fetch · Routines</text>
 
-    <rect x="18" y="266" width="212" height="88" rx="10" fill="#0f172a" stroke="#64748b" stroke-width="1.2"/>
-    <text x="32" y="290" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" font-weight="700">CLI &amp; Any-Language RPC</text>
-    <text x="32" y="312" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="12">BrowserBridge status</text>
-    <text x="32" y="332" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="12">BrowserBridge rpc / screenshot</text>
+    <rect x="16" y="270" width="236" height="92" rx="10" fill="#0f172a" stroke="#64748b" stroke-width="1.2"/>
+    <text x="30" y="294" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">CLI &amp; Any-Language RPC</text>
+    <text x="30" y="316" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">BrowserBridge status</text>
+    <text x="30" y="336" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">BrowserBridge rpc | screenshot</text>
   </g>
 
-  <path d="M 284 146 L 344 146" stroke="#38bdf8" stroke-width="2.2" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
-  <text x="314" y="136" text-anchor="middle" fill="#94a3b8" font-family="ui-monospace, Consolas, monospace" font-size="11">stdio</text>
+  <path d="M 308 150 L 350 150 M 314 145 L 308 150 L 314 155 M 344 145 L 350 150 L 344 155" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="329" y="138" text-anchor="middle" fill="#94a3b8" font-family="ui-monospace, Consolas, monospace" font-size="11">stdio</text>
 
-  <path d="M 284 252 L 344 252" stroke="#34d399" stroke-width="2.2" marker-end="url(#arrow-green)" marker-start="url(#arrow-green)"/>
-  <text x="314" y="242" text-anchor="middle" fill="#6ee7b7" font-family="ui-monospace, Consolas, monospace" font-size="11">direct</text>
+  <path d="M 308 256 L 350 256 M 314 251 L 308 256 L 314 261 M 344 251 L 350 256 L 344 261" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="329" y="244" text-anchor="middle" fill="#6ee7b7" font-family="ui-monospace, Consolas, monospace" font-size="11">direct</text>
 
-  <g transform="translate(348, 76)">
-    <rect width="286" height="374" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.4"/>
+  <!-- Column 2: Rust Host -->
+  <g transform="translate(356, 78)">
+    <rect width="314" height="384" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.4"/>
     <text x="20" y="34" fill="#7dd3fc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700">2. Standalone Rust Host (~1.5 MB)</text>
 
-    <rect x="18" y="52" width="250" height="78" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
-    <text x="32" y="75" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">MCP Server Mode (`BrowserBridge mcp`)</text>
-    <text x="32" y="96" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">FIFO sequential tool dispatcher</text>
-    <text x="32" y="114" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">`--read-only` &amp; `--allow-evaluate` gates</text>
+    <rect x="16" y="52" width="282" height="80" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
+    <text x="30" y="75" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">MCP Server (BrowserBridge mcp)</text>
+    <text x="30" y="96" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">FIFO sequential tool dispatcher</text>
+    <text x="30" y="115" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">--read-only &amp; --allow-evaluate gates</text>
 
-    <rect x="18" y="144" width="250" height="84" rx="10" fill="#042f2e" stroke="#14b8a6" stroke-width="1.3"/>
-    <text x="32" y="167" fill="#99f6e4" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">OS User-Isolated IPC</text>
-    <text x="32" y="187" fill="#ccfbf1" font-family="ui-monospace, Consolas, monospace" font-size="11">Win: \\.\pipe\browser-bridge.&lt;SID&gt;.*</text>
-    <text x="32" y="204" fill="#ccfbf1" font-family="ui-monospace, Consolas, monospace" font-size="11">Unix: 0700 dir + 0600 domain socket</text>
-    <text x="32" y="220" fill="#5eead4" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">CurrentUserOnly DACL · Frame size limits</text>
+    <rect x="16" y="146" width="282" height="86" rx="10" fill="#042f2e" stroke="#14b8a6" stroke-width="1.3"/>
+    <text x="30" y="169" fill="#99f6e4" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">OS User-Isolated IPC (SECURE)</text>
+    <text x="30" y="189" fill="#ccfbf1" font-family="ui-monospace, Consolas, monospace" font-size="11">Win: \\.\pipe\browser-bridge.&lt;SID&gt;.*</text>
+    <text x="30" y="206" fill="#ccfbf1" font-family="ui-monospace, Consolas, monospace" font-size="11">Unix: 0700 dir + 0600 domain socket</text>
+    <text x="30" y="222" fill="#5eead4" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">CurrentUserOnly DACL · Frame caps</text>
 
-    <rect x="18" y="242" width="250" height="112" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
-    <text x="32" y="265" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Native Host &amp; SiteLearner</text>
-    <text x="32" y="286" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Per-profile session multiplexer</text>
-    <text x="32" y="305" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Learns wait strategy &amp; blocker recovery</text>
-    <text x="32" y="324" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Persists domain playbooks &amp; routines</text>
-    <text x="32" y="343" fill="#94a3b8" font-family="ui-monospace, Consolas, monospace" font-size="11">io.github.dcluomax.browser_bridge</text>
+    <rect x="16" y="246" width="282" height="116" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
+    <text x="30" y="269" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Self-Evolving SiteLearner</text>
+    <text x="30" y="290" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Per-profile session multiplexer</text>
+    <text x="30" y="309" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Learns wait strategy &amp; blocker fixes</text>
+    <text x="30" y="328" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Persists domain playbooks &amp; routines</text>
+    <text x="30" y="347" fill="#94a3b8" font-family="ui-monospace, Consolas, monospace" font-size="11">io.github.dcluomax.browser_bridge</text>
   </g>
 
-  <path d="M 634 264 L 694 264" stroke="#38bdf8" stroke-width="2.2" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
-  <text x="664" y="250" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11">Native</text>
-  <text x="664" y="282" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11">Messaging</text>
+  <path d="M 674 270 L 720 270 M 680 265 L 674 270 L 680 275 M 714 265 L 720 270 L 714 275" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="697" y="255" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11">Native</text>
+  <text x="697" y="289" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11">Messaging</text>
 
-  <g transform="translate(698, 76)">
-    <rect width="240" height="374" rx="14" fill="#1e293b" stroke="#818cf8" stroke-width="1.4"/>
+  <!-- Column 3: Browser Extension -->
+  <g transform="translate(726, 78)">
+    <rect width="260" height="384" rx="14" fill="#1e293b" stroke="#818cf8" stroke-width="1.4"/>
     <text x="18" y="34" fill="#c7d2fe" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700">3. Browser Extension</text>
 
-    <rect x="16" y="52" width="208" height="74" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
+    <rect x="16" y="52" width="228" height="76" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
     <text x="28" y="75" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Cross-Browser Core</text>
-    <text x="28" y="95" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Chromium MV3 Service Worker</text>
-    <text x="28" y="113" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Firefox MV2 Persistent Host</text>
+    <text x="28" y="96" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Chromium MV3 Service Worker</text>
+    <text x="28" y="115" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Firefox MV2 Persistent Host</text>
 
-    <rect x="16" y="140" width="208" height="114" rx="10" fill="#0f172a" stroke="#6366f1" stroke-width="1.2"/>
-    <text x="28" y="163" fill="#e0e7ff" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Permission &amp; Lease Guard</text>
-    <text x="28" y="183" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Explicit per-tab user share</text>
-    <text x="28" y="201" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">1-agent-at-a-time tab lock</text>
-    <text x="28" y="219" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Read-Only vs Read-Write ACL</text>
-    <text x="28" y="237" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Origin allowlists &amp; redaction</text>
+    <rect x="16" y="142" width="228" height="118" rx="10" fill="#0f172a" stroke="#6366f1" stroke-width="1.2"/>
+    <text x="28" y="165" fill="#e0e7ff" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Permission &amp; Lease Guard</text>
+    <text x="28" y="186" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Explicit per-tab user share</text>
+    <text x="28" y="205" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">1-agent-at-a-time tab lock</text>
+    <text x="28" y="224" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">3-layer Read / Write ACL</text>
+    <text x="28" y="243" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Origin fence &amp; token redaction</text>
 
-    <rect x="16" y="268" width="208" height="86" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
-    <text x="28" y="291" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Input &amp; Inspection</text>
-    <text x="28" y="311" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Trusted CDP input + DOM fallback</text>
-    <text x="28" y="329" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Background full-page screenshot</text>
+    <rect x="16" y="274" width="228" height="88" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
+    <text x="28" y="297" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700">Input &amp; Inspection</text>
+    <text x="28" y="318" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Trusted CDP + DOM fallback</text>
+    <text x="28" y="337" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12">Background full-page capture</text>
   </g>
 
-  <path d="M 938 264 L 984 264" stroke="#34d399" stroke-width="2.2" marker-end="url(#arrow-green)" marker-start="url(#arrow-green)"/>
+  <path d="M 990 270 L 1028 270 M 996 265 L 990 270 L 996 275 M 1022 265 L 1028 270 L 1022 275" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <g transform="translate(988, 76)">
-    <rect width="176" height="374" rx="14" fill="#1e293b" stroke="#34d399" stroke-width="1.4"/>
-    <text x="16" y="34" fill="#6ee7b7" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700">4. Your Tabs</text>
+  <!-- Column 4: Live Tabs -->
+  <g transform="translate(1034, 78)">
+    <rect width="210" height="384" rx="14" fill="#1e293b" stroke="#34d399" stroke-width="1.4"/>
+    <text x="16" y="34" fill="#6ee7b7" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="15" font-weight="700">4. Your Live Tabs</text>
 
-    <rect x="14" y="52" width="148" height="92" rx="10" fill="#0f172a" stroke="#10b981" stroke-width="1.2"/>
-    <text x="24" y="75" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">Shared Tabs Only</text>
-    <text x="24" y="95" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Real SSO &amp; cookies</text>
-    <text x="24" y="113" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">stay inside browser</text>
-    <text x="24" y="131" fill="#6ee7b7" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Passwords masked</text>
+    <rect x="14" y="52" width="182" height="94" rx="10" fill="#0f172a" stroke="#10b981" stroke-width="1.2"/>
+    <text x="26" y="75" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">Shared Tabs Only</text>
+    <text x="26" y="95" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Real SSO &amp; cookies</text>
+    <text x="26" y="113" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">stay inside browser</text>
+    <text x="26" y="131" fill="#6ee7b7" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Passwords masked</text>
 
-    <rect x="14" y="158" width="148" height="104" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
-    <text x="24" y="181" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">Rich DOM Reach</text>
-    <text x="24" y="201" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Open Shadow DOM</text>
-    <text x="24" y="219" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Cross-origin iframes</text>
-    <text x="24" y="237" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">SVG diagram shapes</text>
-    <text x="24" y="253" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">WebMCP page tools</text>
+    <rect x="14" y="160" width="182" height="106" rx="10" fill="#0f172a" stroke="#475569" stroke-width="1.2"/>
+    <text x="26" y="183" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="700">Rich DOM Reach</text>
+    <text x="26" y="203" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Open Shadow DOM</text>
+    <text x="26" y="221" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Cross-origin iframes</text>
+    <text x="26" y="239" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">SVG diagram shapes</text>
+    <text x="26" y="256" fill="#cbd5e1" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">WebMCP page tools</text>
 
-    <rect x="14" y="276" width="148" height="78" rx="10" fill="#1f2937" stroke="#f59e0b" stroke-width="1.2"/>
-    <text x="24" y="299" fill="#fde68a" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" font-weight="700">Human Handoff</text>
-    <text x="24" y="318" fill="#e5e7eb" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Logins, 2FA &amp; CAPTCHA</text>
-    <text x="24" y="336" fill="#e5e7eb" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">handed back to user</text>
+    <rect x="14" y="280" width="182" height="82" rx="10" fill="#1f2937" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="26" y="303" fill="#fde68a" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12.5" font-weight="700">Human Handoff</text>
+    <text x="26" y="323" fill="#e5e7eb" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">Logins, 2FA &amp; CAPTCHA</text>
+    <text x="26" y="341" fill="#e5e7eb" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11.5">handed back to user</text>
   </g>
 </svg>

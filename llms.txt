@@ -1,6 +1,6 @@
 # Browser Bridge
 
-> Zero-port local MCP server, Native Messaging host, cross-browser extension (Edge, Chrome, Brave, Firefox), and zero-dependency Python SDK that let AI agents act safely inside your own signed-in browser tabs.
+> **100% Local · Zero-Port Secure · Native-Rust FAST (~1.1 ms Pipe IPC) · Self-Evolving (`SiteLearner` + Routines + WebMCP)** — MCP server, Native Messaging host, cross-browser extension (Edge, Chrome, Brave, Firefox), and zero-dependency Python SDK for your own signed-in browser tabs.
 
 ## One-Prompt AI Agent Installation
 

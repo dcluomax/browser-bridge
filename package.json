@@ -2,7 +2,7 @@
   "name": "browser-bridge-monorepo",
   "version": "0.7.0",
   "private": true,
-  "description": "Local MCP server, native messaging host, cross-browser extension, and Python SDK that let AI agents read and act in your own signed-in Edge, Chrome, or Firefox tabs.",
+  "description": "Local, Secure, Fast (~1.1 ms Rust Pipe IPC), and Self-Evolving browser bridge (MCP server, Edge/Chrome/Firefox extension, and 0-dep Python SDK) for your own signed-in tabs.",
   "license": "MIT",
   "author": "dcluomax <1477354+dcluomax@users.noreply.github.com>",
   "repository": {
@@ -33,6 +33,7 @@
   },
   "scripts": {
     "sanitize:check": "node scripts/check-sanitized.mjs",
+    "svg:check": "node scripts/check-svg-layout.mjs",
     "build:extension": "npm --prefix extension run build",
     "package:extension": "npm --prefix extension run package",
     "typecheck": "npm --prefix extension run typecheck",
@@ -40,7 +41,7 @@
     "test:rust": "cargo test --manifest-path rust/Cargo.toml",
     "build:rust": "cargo build --release --manifest-path rust/Cargo.toml",
     "build": "npm run build:extension && npm run build:rust",
-    "test": "npm run sanitize:check && npm run typecheck && npm run test:extension && npm run test:rust",
+    "test": "npm run sanitize:check && npm run svg:check && npm run typecheck && npm run test:extension && npm run test:rust",
     "e2e:edge": "node e2e/run.mjs --browser edge",
     "e2e:chrome": "node e2e/run.mjs --browser chrome",
     "e2e:firefox": "node e2e/run.mjs --browser firefox"
