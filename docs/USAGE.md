@@ -1,10 +1,32 @@
 # Browser Bridge Usage & Onboarding Guide
 
-This guide walks through installing Browser Bridge from source, loading the extension across browsers, configuring profiles, sharing tabs safely, using the CLI, and troubleshooting common issues.
+This guide walks through installing Browser Bridge in one AI prompt (or via the zero-build bootstrapper / source build), loading the extension across browsers, sharing tabs safely, using the CLI, and uninstalling.
 
 ---
 
-## 1. Prerequisites
+## 1. Fastest Onboarding: Install in One Prompt (Zero Build Tools Required)
+
+Paste this single prompt into **GitHub Copilot** (VS Code / CLI), **Claude Code**, **Cursor**, **Windsurf**, **Cline**, or **Codex**:
+
+```text
+Install and configure Browser Bridge by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — download and SHA-256-verify the prebuilt release for my OS/CPU, register the native host and my AI client MCP config, verify with `BrowserBridge status`, and print the exact extension folder path to load in my browser.
+```
+
+Or run the zero-build bootstrapper directly in a terminal:
+
+```powershell
+# Windows (PowerShell — x64 & ARM64)
+irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex
+```
+
+```bash
+# macOS (Apple Silicon & Intel) / Linux (x64)
+curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash
+```
+
+---
+
+## 2. Building & Installing from Source
 
 | Tool | Minimum Version | Purpose |
 | --- | --- | --- |
@@ -13,9 +35,7 @@ This guide walks through installing Browser Bridge from source, loading the exte
 | **Python** *(optional)* | `3.10+` | Installs the zero-dependency `browser-bridge` Python SDK |
 | **Windows Build Tools** *(Windows only)* | MSVC (`vcvars64` / `vcvarsarm64`) | `scripts\install.ps1` auto-discovers Visual Studio Build Tools even when not on `PATH` |
 
----
-
-## 2. One-Command Installation
+### Source Installation Commands
 
 ### Windows (PowerShell)
 

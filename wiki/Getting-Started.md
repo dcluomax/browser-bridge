@@ -1,45 +1,48 @@
 # Getting Started
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/assets/onboarding-flow.svg" alt="Browser Bridge 60-second four-step onboarding flow" width="100%" />
+  <img src="https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/assets/onboarding-flow.svg" alt="Browser Bridge One-Prompt Onboarding Flow" width="100%" />
 </p>
 
-Follow these four steps to go from a fresh clone to reading and automating a live browser tab in under 60 seconds.
+Go from zero to reading and automating a live signed-in browser tab in seconds — with **zero Rust or Node.js build tools required**.
 
 ---
 
-## Prerequisites
+## Step 1: Install in One AI Prompt (Recommended)
 
-- **Rust** `1.85+` ([rustup.rs](https://rustup.rs))
-- **Node.js** `20+` and `npm`
-- *(Optional)* **Python** `3.10+` for the zero-dependency Python SDK
+Paste this single prompt into **GitHub Copilot** (VS Code or CLI), **Claude Code**, **Cursor**, **Windsurf**, **Cline**, or **Codex**:
 
----
+```text
+Install and configure Browser Bridge by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — download and SHA-256-verify the prebuilt release for my OS/CPU, register the native host and my AI client MCP config, verify with `BrowserBridge status`, and print the exact extension folder path to load in my browser.
+```
 
-## Step 1: Run the One-Line Installer
-
-### Windows (PowerShell)
+### Alternative: One-Line Terminal Bootstrap (Zero Build Tools)
 
 ```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex
+```
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash
+```
+
+### Alternative: Build from Source (Rust 1.85+ & Node.js 20+)
+
+```powershell
+# Windows
 git clone https://github.com/dcluomax/browser-bridge.git
 cd browser-bridge
 .\scripts\install.ps1 -RegisterAllMcp -InstallPythonSdk
 ```
 
-### macOS & Linux
-
 ```bash
+# macOS / Linux
 git clone https://github.com/dcluomax/browser-bridge.git
 cd browser-bridge
 ./scripts/install.sh --register-all --install-python
 ```
-
-What the installer does:
-1. Bundles the Chromium (Manifest V3) and Firefox (Manifest V2) extensions into `extension/dist/`.
-2. Compiles the standalone release binary (`BrowserBridge` / `BrowserBridge.exe`, ~1.5 MB).
-3. Copies the binary and unpacked extensions into a stable per-user home (`%LOCALAPPDATA%\BrowserBridge` on Windows, `~/.browser-bridge` on macOS/Linux).
-4. Registers per-user Native Messaging manifests for Edge, Chrome, Chromium, and Firefox.
-5. Registers the `browser-bridge` MCP server in GitHub Copilot, Claude Desktop, and Cursor configs (when `-RegisterAllMcp` / `--register-all` is passed).
 
 ---
 

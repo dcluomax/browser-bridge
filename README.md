@@ -11,7 +11,7 @@
 [![Browsers](https://img.shields.io/badge/Browsers-Edge%20%7C%20Chrome%20%7C%20Brave%20%7C%20Firefox-059669)](#browser-setup)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-6366f1)](docs/MCP_CLIENTS.md)
 
-**English** · **[简体中文](README.zh-CN.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[MCP Client Setup](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**English** · **[简体中文](README.zh-CN.md)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[MCP Client Setup](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -36,24 +36,45 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or containeriz
 
 ---
 
-## 60-Second Quickstart (Out of the Box)
+## Quickstart — Install in One Prompt (Out of the Box)
 
 <p align="center">
-  <img src="docs/assets/onboarding-flow.svg" alt="Four-step onboarding flow: run installer, load unpacked extension once, share a tab, and prompt your AI agent" width="100%" />
+  <img src="docs/assets/onboarding-flow.svg" alt="Four-step onboarding flow: paste one prompt to your AI agent, load unpacked extension once, share a tab, and prompt your AI agent" width="100%" />
 </p>
 
-### Option A: Zero-Build Install from Prebuilt GitHub Releases
+### 1. Install the Host & Register MCP
 
-Download the precompiled binary for your platform (`windows-x64`, `windows-arm64`, `macos-arm64`, `linux-x64`) plus `browser-bridge-chromium-0.7.0.zip` or `browser-bridge-firefox-0.7.0.xpi` from **[GitHub Releases](https://github.com/dcluomax/browser-bridge/releases/latest)** — no Rust or Node.js toolchain needed:
+#### Method A (Recommended): Paste One Prompt into Your AI Coding Agent
 
-```bash
-# Register the native host manifest once (replace <CHROMIUM_EXT_ID> from extension/bridge.config.json: ggkciaoahjoickdapninkfaceeadombm)
-BrowserBridge install --chromium-id ggkciaoahjoickdapninkfaceeadombm
+Copy and paste this single prompt into **GitHub Copilot** (VS Code or CLI), **Claude Code**, **Cursor**, **Windsurf**, **Cline**, or **Codex** — **no Rust, Cargo, or Node.js required**:
+
+```text
+Install and configure Browser Bridge by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — download and SHA-256-verify the prebuilt release for my OS/CPU, register the native host and my AI client MCP config, verify with `BrowserBridge status`, and print the exact extension folder path to load in my browser.
 ```
 
-### Option B: Build, Install & Register MCP from Source in One Command
+> Want read-only inspection or the Python SDK too? Append *"enable read-only MCP mode"* or *"also install the Python SDK"* to the prompt above.
 
-Prerequisites: **Rust** `1.85+` (`rustup`), **Node.js** `20+` (`npm`), and *(optional)* **Python** `3.10+`.
+<details>
+<summary><strong>Method B: One-Line Terminal Bootstrap (Zero Build Tools Required)</strong></summary>
+
+Downloads SHA-256-verified prebuilt binaries (`windows-x64`, `windows-arm64`, `macos-arm64`, `macos-x64`, `linux-x64`) + unpacked extensions from [GitHub Releases](https://github.com/dcluomax/browser-bridge/releases/latest) and auto-configures installed MCP clients:
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex
+```
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash
+```
+
+</details>
+
+<details>
+<summary><strong>Method C: Build &amp; Install from Source (Rust 1.85+ &amp; Node.js 20+)</strong></summary>
 
 **Windows (PowerShell):**
 
@@ -71,7 +92,9 @@ cd browser-bridge
 ./scripts/install.sh --register-all --install-python
 ```
 
-> Prefer registering a single MCP client? Pass `-RegisterCopilotMcp`, `-RegisterClaudeMcp`, or `-RegisterCursorMcp` (or `--register-copilot`, `--register-claude`, `--register-cursor` on macOS/Linux). Add `-ReadOnlyMcp` / `--read-only` to enforce hardware-level read-only inspection.
+> Prefer registering a single MCP client? Pass `-RegisterCopilotMcp`, `-RegisterClaudeMcp`, or `-RegisterCursorMcp` (or `--register-copilot`, `--register-claude`, `--register-cursor` on macOS/Linux). Add `-ReadOnlyMcp` / `--read-only` to enforce host-level read-only inspection.
+
+</details>
 
 ### 2. Load the Browser Extension (Once per Profile)
 
@@ -198,6 +221,8 @@ Read the complete **[Python SDK & Direct IPC Reference](python/README.md)** and 
 
 | Document | Contents |
 | --- | --- |
+| **[docs/INSTALL.md](docs/INSTALL.md)** | AI Agent 1-Prompt installation playbook (zero-build SHA-256 prebuilt release setup) |
+| **[llms.txt](llms.txt)** | Machine-readable repository index for LLM coding agents |
 | **[docs/USAGE.md](docs/USAGE.md)** | Complete installation, onboarding, popup controls, CLI subcommands, and daily workflows |
 | **[docs/FEATURES.md](docs/FEATURES.md)** | Deep dive into all 26 MCP tools, `SiteLearner`, Site Memory routines, WebMCP, and SVG/iframe snapshots |
 | **[docs/MCP_CLIENTS.md](docs/MCP_CLIENTS.md)** | Copy-paste setup for GitHub Copilot, VS Code, Claude Desktop, Claude Code, Cursor, Windsurf, and Cline |

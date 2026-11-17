@@ -9,7 +9,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-0f172a?logo=rust)](rust/Cargo.toml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B%20(零依赖)-0f172a?logo=python)](python/README.md)
 
-**[English](README.md)** · **简体中文** · **[完整使用指南](docs/USAGE.md)** · **[核心特性详解](docs/FEATURES.md)** · **[MCP 客户端配置](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[GitHub Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**[English](README.md)** · **简体中文** · **[1-Prompt 安装手册](docs/INSTALL.md)** · **[完整使用指南](docs/USAGE.md)** · **[核心特性详解](docs/FEATURES.md)** · **[MCP 客户端配置](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[GitHub Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -21,23 +21,43 @@
 
 ---
 
-## 60 秒开箱即用（快速上手）
+## 一句 Prompt 开箱即用（快速上手）
 
 <p align="center">
-  <img src="docs/assets/onboarding-flow.svg" alt="Browser Bridge 四步快速上手流程：一键安装、加载扩展、分享标签页、调用 AI Agent" width="100%" />
+  <img src="docs/assets/onboarding-flow.svg" alt="Browser Bridge 四步快速上手流程：一句 Prompt 自动安装、加载扩展、分享标签页、调用 AI Agent" width="100%" />
 </p>
 
-### 方式 A：免编译直接下载预构建安装包（GitHub Releases）
+### 第一步：安装宿主并注册 MCP
 
-无需安装 Rust 或 Node.js，直接前往 **[GitHub Releases](https://github.com/dcluomax/browser-bridge/releases/latest)** 下载对应系统的预编译宿主二进制（`windows-x64`、`windows-arm64`、`macos-arm64`、`linux-x64`）、扩展包（`browser-bridge-chromium-0.7.0.zip` / `.xpi`）以及 Python `.whl` 安装包：
+#### 方式一（强烈推荐）：一句 Prompt 让 AI 全自动安装（无需 Rust / Node 编译环境）
 
-```bash
-BrowserBridge install --chromium-id ggkciaoahjoickdapninkfaceeadombm
+直接把下面这一句提示词发给 **GitHub Copilot（VS Code / CLI）**、**Claude Code**、**Cursor**、**Windsurf**、**Cline** 或 **Codex**：
+
+```text
+请按 https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md 为我安装并配置好 Browser Bridge：自动下载当前系统预编译包并校验 SHA-256，注册 Native Host 与我当前的 AI 客户端 MCP 配置，运行 BrowserBridge status 验证，并告诉我浏览器加载扩展的具体目录路径。
 ```
 
-### 方式 B：从源码一行命令编译、安装并自动注册 MCP
+> 如需强制只读安全模式或同时安装 Python SDK，只需在提示词末尾加上 *“开启只读 MCP 模式”* 或 *“同时安装 Python SDK”* 即可。
 
-环境要求：**Rust** `1.85+`、**Node.js** `20+`、*（可选）* **Python** `3.10+`。
+<details>
+<summary><strong>方式二：终端一行命令免编译安装（自动校验 SHA-256 与配置 MCP）</strong></summary>
+
+**Windows (PowerShell)：**
+
+```powershell
+irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex
+```
+
+**macOS / Linux：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash
+```
+
+</details>
+
+<details>
+<summary><strong>方式三：从源码一行命令编译安装（需 Rust 1.85+ 与 Node.js 20+）</strong></summary>
 
 **Windows (PowerShell)：**
 
@@ -56,6 +76,8 @@ cd browser-bridge
 ```
 
 > 只需注册单个客户端时，可传入 `-RegisterCopilotMcp`、`-RegisterClaudeMcp` 或 `-RegisterCursorMcp`（macOS/Linux 对应 `--register-copilot`、`--register-claude`、`--register-cursor`）。附加 `-ReadOnlyMcp` / `--read-only` 可开启主机级强制只读模式。
+
+</details>
 
 ### 第二步：在浏览器加载扩展（每个浏览器配置仅需一次）
 

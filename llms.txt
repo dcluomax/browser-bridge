@@ -1,0 +1,18 @@
+# Browser Bridge
+
+> Zero-port local MCP server, Native Messaging host, cross-browser extension (Edge, Chrome, Brave, Firefox), and zero-dependency Python SDK that let AI agents act safely inside your own signed-in browser tabs.
+
+## One-Prompt AI Agent Installation
+
+- [Agent Installation Playbook (docs/INSTALL.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md): Step-by-step zero-build SHA-256-verified installer instructions for GitHub Copilot, Claude Code, Cursor, Windsurf, Cline, and Codex.
+
+## Documentation
+
+- [Overview & Quickstart (README.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/README.md)
+- [中文使用总览 (README.zh-CN.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/README.zh-CN.md)
+- [Usage & CLI Guide (docs/USAGE.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/USAGE.md)
+- [Features, SiteLearner, Routines & WebMCP (docs/FEATURES.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/FEATURES.md)
+- [MCP Client Configurations (docs/MCP_CLIENTS.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/MCP_CLIENTS.md)
+- [Security & Privacy Model (docs/SECURITY_MODEL.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/SECURITY_MODEL.md)
+- [Direct Named Pipe / Unix Socket IPC Wire Protocol (docs/IPC_PROTOCOL.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/IPC_PROTOCOL.md)
+- [Zero-Dependency Python SDK (python/README.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/python/README.md)

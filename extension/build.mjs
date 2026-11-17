@@ -2,10 +2,10 @@
 // persistent background page, which keeps the native messaging port alive without workarounds).
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { deflateRawSync } from 'node:zlib';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -63,6 +63,94 @@ export function firefoxManifest() {
   };
 }
 
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buf) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) crc = CRC32_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function collectFiles(dir, acc = []) {
+  for (const name of readdirSync(dir).sort()) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) collectFiles(full, acc);
+    else acc.push(full);
+  }
+  return acc;
+}
+
+/** Writes a deterministic, deflated PKZIP archive (.zip / .xpi) identically on Windows, macOS, and Linux. */
+function writeZipArchive(sourceDir, outFile) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const files = collectFiles(sourceDir);
+  for (const fullPath of files) {
+    const relName = relative(sourceDir, fullPath).replaceAll('\\', '/');
+    const nameBytes = Buffer.from(relName, 'utf8');
+    const raw = readFileSync(fullPath);
+    const compressed = deflateRawSync(raw, { level: 9 });
+    const sum = crc32(raw);
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x0800, 6); // UTF-8 filename flag
+    localHeader.writeUInt16LE(8, 8);      // Deflate
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0x0021, 12);
+    localHeader.writeUInt32LE(sum, 14);
+    localHeader.writeUInt32LE(compressed.length, 18);
+    localHeader.writeUInt32LE(raw.length, 22);
+    localHeader.writeUInt16LE(nameBytes.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localParts.push(localHeader, nameBytes, compressed);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(8, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0x0021, 14);
+    centralHeader.writeUInt32LE(sum, 16);
+    centralHeader.writeUInt32LE(compressed.length, 20);
+    centralHeader.writeUInt32LE(raw.length, 24);
+    centralHeader.writeUInt16LE(nameBytes.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    centralParts.push(centralHeader, nameBytes);
+
+    offset += localHeader.length + nameBytes.length + compressed.length;
+  }
+
+  const centralSize = centralParts.reduce((n, b) => n + b.length, 0);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralSize, 12);
+  eocd.writeUInt32LE(offset, 16);
+  eocd.writeUInt16LE(0, 20);
+
+  writeFileSync(outFile, Buffer.concat([...localParts, ...centralParts, eocd]));
+}
 export function chromiumExtensionId(publicKeyBase64) {
   const digest = createHash('sha256').update(Buffer.from(publicKeyBase64, 'base64')).digest('hex').slice(0, 32);
   return [...digest].map((c) => String.fromCharCode('a'.charCodeAt(0) + parseInt(c, 16))).join('');
@@ -102,7 +190,7 @@ async function buildTarget(target) {
     mkdirSync(artifacts, { recursive: true });
     const file = join(artifacts, `browser-bridge-${target}-${pkg.version}.${target === 'firefox' ? 'xpi' : 'zip'}`);
     rmSync(file, { force: true });
-    execFileSync('tar', ['-a', '-cf', file, '-C', out, '.'], { stdio: 'inherit' });
+    writeZipArchive(out, file);
   }
   return out;
 }
