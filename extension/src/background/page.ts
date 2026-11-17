@@ -69,7 +69,7 @@ async function executeWithRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-const EXPECTED_CONTENT_VERSION = '0.10.0';
+const EXPECTED_CONTENT_VERSION = '0.10.1';
 
 /** Runs inside the page (isolated world). Must be self-contained: it is serialized by the browser. */
 function invokeContent(method: string, args: unknown[], expectedVersion: string): { ok?: unknown; err?: string; missing?: boolean } {
@@ -87,7 +87,13 @@ function invokeContent(method: string, args: unknown[], expectedVersion: string)
 
 async function inject(target: chrome.scripting.InjectionTarget, tab: chrome.tabs.Tab): Promise<void> {
   try {
-    await executeWithRetry(() => api.scripting.executeScript({ target, files: ['content.js'] }));
+    await executeWithRetry(() =>
+      api.scripting.executeScript({
+        target,
+        files: ['content.js'],
+        ...(isChromium ? { injectImmediately: true } : {}),
+      }),
+    );
   } catch (error) {
     throw describeInjectionError(error, tab);
   }
@@ -97,10 +103,11 @@ async function inject(target: chrome.scripting.InjectionTarget, tab: chrome.tabs
 export async function callFrame<T>(tab: chrome.tabs.Tab, frameId: number, method: ContentMethod, args: unknown[] = []): Promise<T> {
   assertScriptable(tab);
   const target: chrome.scripting.InjectionTarget = { tabId: tab.id!, frameIds: [frameId] };
+  const immediate = isChromium ? { injectImmediately: true } : {};
   let results: chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
   try {
     results = (await executeWithRetry(() =>
-      api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION] }),
+      api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION], ...immediate }),
     )) as chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
   } catch (error) {
     throw describeInjectionError(error, tab);
@@ -110,7 +117,7 @@ export async function callFrame<T>(tab: chrome.tabs.Tab, frameId: number, method
     await inject(target, tab);
     try {
       results = (await executeWithRetry(() =>
-        api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION] }),
+        api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION], ...immediate }),
       )) as chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
     } catch (error) {
       throw describeInjectionError(error, tab);
@@ -126,11 +133,12 @@ export async function callFrame<T>(tab: chrome.tabs.Tab, frameId: number, method
 export async function callAllFrames<T>(tab: chrome.tabs.Tab, method: ContentMethod, args: unknown[] = [], strict = false): Promise<Array<FrameResult<T>>> {
   assertScriptable(tab);
   const target: chrome.scripting.InjectionTarget = { tabId: tab.id!, allFrames: true };
+  const immediate = isChromium ? { injectImmediately: true } : {};
   await inject(target, tab);
   let results: chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
   try {
     results = (await executeWithRetry(() =>
-      api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION] }),
+      api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION], ...immediate }),
     )) as chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
   } catch (error) {
     throw describeInjectionError(error, tab);
@@ -255,12 +263,20 @@ export function watchNavigation(tabId: number, expectedUrl?: string, trace = fal
   };
   const onResponse = (details: ResponseDetails): undefined => {
     if (details.tabId === tabId) record('response', { url: details.url, requestId: details.requestId, statusCode: details.statusCode });
-    if (details.tabId === tabId && details.type === 'main_frame' &&
-      (requestId ? details.requestId === requestId : !expectedBase || stripHash(details.url) === expectedBase)) {
-      requestId = details.requestId;
-      responseUrl = details.url;
-      status = details.statusCode;
-      if (pendingCommit && stripHash(pendingCommit) === stripHash(details.url)) acceptCommit(pendingCommit);
+    if (details.tabId === tabId && details.type === 'main_frame') {
+      const followUpChain =
+        requestId === undefined
+          ? !expectedBase || stripHash(details.url) === expectedBase || sawLoading
+          : details.requestId === requestId ||
+            (status !== null && status >= 300 && status < 400) ||
+            aborted !== undefined ||
+            sawLoading;
+      if (followUpChain) {
+        requestId = details.requestId;
+        responseUrl = details.url;
+        status = details.statusCode;
+        if (pendingCommit && stripHash(pendingCommit) === stripHash(details.url)) acceptCommit(pendingCommit);
+      }
     }
     return undefined;
   };

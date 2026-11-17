@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 2,
+  "domain": "huggingface.co",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Model/Dataset page ready in ~850 ms (vs 2,971 ms load); full Model Card extraction in ~45 ms without 200+ file/tag header truncation",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 150,
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Hugging Face model and dataset pages have 150+ tag/file buttons above the fold that truncate 20 KB snapshots; use \"read_model_card\" (~45 ms) for full Markdown documentation.",
+    "Use \"search_models\", \"search_datasets\", or \"search_papers\" for direct filtered navigation."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_model_card": {
+      "name": "read_model_card",
+      "description": "Extracts the full Hugging Face Model Card or Dataset Card prose and code examples in ~45 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": ".model-card-content, section.pt-8, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "card",
+          "optional": false
+        }
+      ]
+    },
+    "search_models": {
+      "name": "search_models",
+      "description": "Searches Hugging Face models sorted by trending/downloads and snapshots results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Model name or task query, e.g. 'Qwen2.5-Coder'.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://huggingface.co/models?search={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "models",
+          "optional": false
+        }
+      ]
+    },
+    "search_datasets": {
+      "name": "search_datasets",
+      "description": "Searches Hugging Face datasets and snapshots matching entries.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Dataset query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://huggingface.co/datasets?search={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "datasets",
+          "optional": false
+        }
+      ]
+    },
+    "search_papers": {
+      "name": "search_papers",
+      "description": "Searches Hugging Face Daily Papers / AI papers index.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Paper search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://huggingface.co/papers?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "papers",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

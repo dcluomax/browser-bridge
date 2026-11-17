@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 2,
+  "domain": "arxiv.org",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Paper abstract open + snapshot: 10,682 ms -> ~550 ms (19.4x faster via domcontentloaded + top-frame MathJax/iframe skip); 1-call jump to /html/{{url.arxivId}} full-text HTML edition",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "arXiv pages load MathJax and widget subresources that stall window.onload >9s; Browser Bridge uses domcontentloaded + snapshotFrames=top (~550 ms).",
+    "Use \"read_abstract\" (~35 ms) on /abs/<id>, \"open_html_paper\" to jump directly to https://arxiv.org/html/{{url.arxivId}} full HTML paper text, or \"search_papers\"."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_abstract": {
+      "name": "read_abstract",
+      "description": "Extracts paper title, authors, abstract, subjects, and version history from #abs / main in ~35 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 30000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#abs, #content, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "abstract",
+          "optional": false
+        }
+      ]
+    },
+    "open_html_paper": {
+      "name": "open_html_paper",
+      "description": "Navigates from /abs/<id> or /pdf/<id> directly to arXiv's native HTML full-text paper (arxiv.org/html/{{url.arxivId}}) and extracts clean article prose.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://arxiv.org/html/{{url.arxivId}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 80000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "article, .ltx_page_main, main, body" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "paper",
+          "optional": false
+        }
+      ]
+    },
+    "search_papers": {
+      "name": "search_papers",
+      "description": "Searches arXiv papers across all fields and extracts clean search results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Paper title, author, or topic keywords.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://arxiv.org/search/?query={{query:urlencode}}&searchtype=all&source=header",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 35000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#main-container, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

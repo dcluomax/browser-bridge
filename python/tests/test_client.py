@@ -241,12 +241,16 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(self.browser.calls[-1][0], "session.allowlist")
         self.assertEqual(self.browser.calls[-1][1], {"origins": ["*.github.com"], "tabId": 88})
 
-        # Verify automatic {{url.docId}}, {{url.gid}}, {{param:urlencode}}, and op="fetch" (raw + stripHtml)
+        # Verify automatic {{url.docId}}, {{url.gid}}, {{url.cleanPath}}, {{url.arxivId}}, {{param:urlencode}}, **kwargs, and op="fetch"
         class RoutineMockBridge(RecordingBridge):
+            def __init__(self):
+                super().__init__()
+                self.current_url = "https://docs.google.com/spreadsheets/d/doc_999/edit#gid=7"
+
             def call(self, method, params=None, *, timeout=None):
                 self.calls.append((method, params, timeout))
                 if method == "page.info":
-                    return {"url": "https://docs.google.com/spreadsheets/d/doc_999/edit#gid=7"}
+                    return {"url": self.current_url}
                 if method == "page.fetch":
                     url_s = params["url"]
                     raw = b"<html><head><style>body{}</style></head><body><h1>Doc Title</h1><p>Hello &amp; world</p></body></html>" if "mobilebasic" in url_s else b"colA,colB\n1,2\n"
@@ -286,7 +290,22 @@ class ClientTests(unittest.TestCase):
                             "saveAs": "docText",
                         },
                     ],
-                }
+                },
+                "arxiv_and_reddit": {
+                    "name": "arxiv_and_reddit",
+                    "readOnly": True,
+                    "params": {"sort": {"default": "top"}},
+                    "steps": [
+                        {
+                            "op": "fetch",
+                            "params": {
+                                "url": "{{url.cleanPath}}.json?raw_json=1&sort={{sort}}&paper={{url.arxivId}}",
+                                "stripHtml": False,
+                            },
+                            "saveAs": "meta",
+                        }
+                    ],
+                },
             },
         }
         out = rpage.run_routine("export_csv")
@@ -298,10 +317,18 @@ class ClientTests(unittest.TestCase):
             "https://docs.google.com/spreadsheets/d/doc_999/gviz/tq?tqx=out:csv&gid=7&tq=select%20A%2C%20B",
         )
 
-        # Verify all 14 repository routines/*.json files follow schemaVersion 2 with ISO-8601 timestamps
+        rb.current_url = "https://arxiv.org/pdf/2501.12345v2.pdf/"
+        out2 = rpage.run_routine("arxiv_and_reddit", sort="new")
+        self.assertEqual(out2["outputs"]["meta"], "colA,colB\n1,2\n")
+        self.assertEqual(
+            rb.calls[-1][1]["url"],
+            "https://arxiv.org/pdf/2501.12345v2.pdf.json?raw_json=1&sort=new&paper=2501.12345v2",
+        )
+
+        # Verify all 24 repository routines/*.json files follow schemaVersion 2 with ISO-8601 timestamps
         routines_dir = Path(__file__).resolve().parents[2] / "routines"
         routine_files = sorted(routines_dir.glob("*.json"))
-        self.assertEqual(len(routine_files), 14)
+        self.assertEqual(len(routine_files), 24)
         for rf in routine_files:
             doc = json.loads(rf.read_text(encoding="utf-8"))
             self.assertEqual(doc.get("schemaVersion"), 2, rf.name)

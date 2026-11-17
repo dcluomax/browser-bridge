@@ -1,11 +1,11 @@
 # Browser Bridge Feature Deep Dive
 
-Every subsystem in Browser Bridge `v0.10.0` is engineered around four core design guarantees:
+Every subsystem in Browser Bridge `v0.10.1` is engineered around four core design guarantees:
 
 - **100% Local:** Runs inside your own live, signed-in Edge, Chrome, Brave, or Firefox profile with zero cloud relays and zero WebDriver browser downloads.
 - **Zero-Port Secure:** Opens **0 TCP/WebSocket ports**, authenticates over OS user-isolated Named Pipes / `0600` Unix sockets, and enforces **3-layer Read-Only / Read-Write tab ACLs**, `allowedOrigins` domain fences, and automatic password/JWT redaction.
-- **Native FAST:** Ships as a **~1.5 MB standalone Rust binary** (~8 MB RAM) delivering **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM injection, focus-free background screenshots, and a 0-dependency Python SDK.
-- **Self-Evolving:** Ships **14 git-tracked, timestamped `routines/*.json` site optimization playbooks** (`schemaVersion: 2`, `verifiedAt` upgrade auto-merge, `[STALE]` website-redesign drift guard, **5×–31× measured speedups**), passively learns adaptations via **`SiteLearner`**, records user demonstrations via **`browser_demonstrate`**, and discovers native W3C **WebMCP (`document.modelContext`)** tools.
+- **Native FAST:** Ships as a **~1.5 MB standalone Rust binary** (~8 MB RAM) delivering **`~1.1 ms` median Direct Pipe RTT**, Chromium MV3 `injectImmediately: true` DOM injection, multi-hop redirect tracking, focus-free background screenshots, and a 0-dependency Python SDK.
+- **Self-Evolving:** Ships **24 git-tracked, timestamped `routines/*.json` site optimization playbooks** (`schemaVersion: 2`, `PATCH 0.10.Z` upgrade auto-merge, `[STALE]` website-redesign drift guard, **15×–1,800× network-excluded speedups**), passively learns adaptations via **`SiteLearner`**, records user demonstrations via **`browser_demonstrate`**, and discovers native W3C **WebMCP (`document.modelContext`)** tools.
 
 This document details the 31+1 MCP tools, DOM/Canvas/SVG accessibility snapshots, structured locators, Timestamped Site Optimization JSONs (`routines/*.json`), Adaptive Error-Driven Site Learning (`SiteLearner`), and W3C WebMCP integration.
 
@@ -103,26 +103,36 @@ This document details the 31+1 MCP tools, DOM/Canvas/SVG accessibility snapshots
 
 ---
 
-## 4. Built-In Timestamped Site Optimization Playbooks (`routines/*.json`)
+## 4. Built-In Timestamped Site Optimization Playbooks (`routines/*.json` — 24 Sites)
 
-All 14 built-in playbooks live in [`routines/`](../routines/) (`schemaVersion: 2`), carry ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps, auto-refresh outdated built-in selectors on upgrade without touching custom user flows, and deliver measured 5×–31× speedups:
+All **24** built-in playbooks live in [`routines/`](../routines/) (`schemaVersion: 2`), follow the **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Policy ([`docs/VERSIONING.md`](VERSIONING.md))**, auto-refresh outdated built-in routines and `accessProfile` latency settings when `seed.verifiedAt >= disk.updatedAt` without touching custom user flows, and deliver **15×–1,800× network-excluded speedups**:
 
-| Playbook File | Canonical Domain / Path | Built-in Routines | Measured Speedup |
+| Playbook File | Canonical Domain / Alias | Built-in Routines | Network-Excluded / `0-Net` Speedup |
 | --- | --- | --- | --- |
-| `google.com.json` | `google.com` | `search`, `read_results`, `next_results_page` | `15,495 ms` → **`1,292–1,423 ms` (~11–12×)** |
-| `docs.google.com__document.json` | `docs.google.com/document` (`google-docs`) | `read_document`, `append_text`, `replace_text`, `rename_document` | `8,218 ms` → **`1,528 ms` (5.4×)** + **`10 ms`** Kix `<canvas>` snapshot + **`~170–267 ms`** `/mobilebasic` read |
-| `docs.google.com__spreadsheets.json` | `docs.google.com/spreadsheets` (`google-sheets` / `google-excel`) | `read_sheet_csv`, `read_cell`, `write_cell`, `select_range`, `rename_spreadsheet` | `8,077 ms` → **`259 ms` (31×)** cell R/W + **`~201–325 ms`** `/gviz/tq` CSV |
-| `github.com.json` | `github.com` | `read_main_content`, `search_github`, `search_repo_issues`, `go_to_file` | `3,469 ms` → **`~920 ms` (3.8×)** nav + **`~50 ms`** untruncated README/PR read |
-| `chatgpt.com.json` | `chatgpt.com` (`chatgpt`) | `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat` | **`~690–914 ms`** ready + **`117 ms`** safe draft + deterministic `stop-button` wait |
-| `diagrams.net.json` | `diagrams.net` (`drawio`) | `read_diagram_xml`, `write_diagram_xml`, `insert_shape`, `add_page` | `#fragment` `30s` timeout → `4.96 s`; **`660 ms`** XML read / **`870 ms`** write |
-| `amazon.com.json` | `amazon.com` | `search_products`, `read_product_details` | `16,043 ms` → **`2,491 ms` (6.4×)** |
-| `finance.yahoo.com.json` | `finance.yahoo.com` | `lookup_quote`, `read_quote_summary` | `8,050 ms+` → **`702 ms` (11.5×)** |
-| `youtube.com.json` | `youtube.com` | `search_videos`, `open_transcript` | **`2,042 ms`** video search (avoids 30s streaming `onload` stall) |
-| `wikipedia.org.json` | `wikipedia.org` | `search_article`, `read_article` | ~8 KB `#cite_note` compaction + 35k-char article read in **`~2.2 s`** |
-| `news.ycombinator.com.json` | `news.ycombinator.com` (`hn`) | `read_front_page`, `search_hn` | Flattens `border=0` layout tables; 30/30 stories untruncated |
-| `stackoverflow.com.json` | `stackoverflow.com` | `dismiss_cookies`, `search_questions`, `read_qa` | Auto-dismisses OneTrust banner + 1,200-char code blocks + **`~60 ms`** Q&A read |
-| `reddit.com.json` | `reddit.com` | `search_reddit`, `read_thread` | `directHttpBlocked=true` (`403` skip) + `shreddit-*` Shadow DOM traversal |
-| `x.com.json` | `x.com` (`twitter`) | `search_posts`, `draft_post` | `domcontentloaded` + `350 ms` hydration + Cloudflare `browser_handoff` detection |
+| `perplexity.ai.json` | `perplexity.ai` (`perplexity`) | `draft_query`, `ask_search`, `read_answer` | `18.9s` SSE `document_idle` hang → **`4–7.8 ms` `0-Net` snap (>2,400×)** · **`~450–840 ms` post-net** |
+| `medium.com.json` | `medium.com` (`medium`) | `read_article`, `dismiss_meter_modal`, `search_stories` | `12,825 ms` One-Tap iframe hang → **`5.7–7 ms` `0-Net` snap (>1,800×)** · **`586 ms` post-net (39×)** |
+| `docs.google.com__spreadsheets.json` | `docs.google.com/spreadsheets` (`google-sheets` / `google-excel`) | `read_sheet_csv`, `read_cell`, `write_cell`, `select_range`, `rename_spreadsheet` | `8,077 ms` UI detours → **`180–259 ms` `0-Net` cell R/W (31×–45×)** · **`~201–325 ms`** `/gviz/tq` CSV |
+| `google.com.json` | `google.com` (`google`) | `search`, `read_results`, `next_results_page` | `~14,978 ms` post-net → **`532 ms` post-net (28×)** · **`41 ms` `0-Net` `read_results`** |
+| `docs.google.com__document.json` | `docs.google.com/document` (`google-docs`) | `read_document`, `append_text`, `replace_text`, `rename_document` | **`10 ms` `0-Net` Kix `<canvas>` `DOCS_modelChunk` snapshot** + **`~170–267 ms`** `/mobilebasic` full read |
+| `arxiv.org.json` | `arxiv.org` (`arxiv`) | `read_abstract`, `open_html_paper`, `search_papers` | `~10,100 ms` MathJax stall → **`~550 ms` post-net (18×)** · **`12 ms` `0-Net` `read_abstract`** + `{{url.arxivId}}` |
+| `pypi.org.json` | `pypi.org` (`pypi`) | `read_package_docs`, `search_packages` | `~7,320 ms` post-net → **`491 ms` post-net (14.9×)** · **`40–50 ms` `0-Net` `read_package_docs`** |
+| `linkedin.com.json` | `linkedin.com` (`linkedin`) | `search_jobs`, `search_people`, `read_main_content` | `>8,500 ms` multi-hop redirect stall → **`~450–905 ms` (~10×–18×)** · **`29 ms` `0-Net` snap** |
+| `mail.google.com.json` | `mail.google.com` (`gmail`) | `search_mail`, `read_open_thread`, `draft_compose` | Skips infinite `/bind` long-poll (`>9s` → **`~950 ms` post-net**, **`6–8 ms` `0-Net` snap**); safe `draft_compose` |
+| `github.com.json` | `github.com` | `read_main_content`, `search_github`, `search_repo_issues`, `go_to_file` | 200-link header compaction + `{{url.repo}}`: **`50 ms` `0-Net` untruncated README/PR read** |
+| `huggingface.co.json` | `huggingface.co` (`hf`) | `read_model_card`, `search_models`, `search_datasets`, `search_papers` | **`18–45 ms` `0-Net` Model Card read** (`23.9 ms` `0-Net` snap) without 200-file header truncation |
+| `npmjs.com.json` | `npmjs.com` (`npm`) | `read_package_readme`, `search_packages` | Skips child-frame stalls: **`13 ms` `0-Net` `#readme` extraction** (`13.1 ms` `0-Net` snap) |
+| `notion.so.json` | `notion.so` (`notion`, `notion.com`, `*.notion.site`) | `read_page`, `quick_find` | **`13–16 ms` `0-Net` snap** · **`~50 ms` `.notion-page-content` read** + `Ctrl+K` `quick_find` |
+| `chatgpt.com.json` | `chatgpt.com` (`chatgpt`) | `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat` | Protected `contentinfo` `<form>` · **`35 ms` `0-Net` read** · **`117 ms` draft** · deterministic Stop-button wait |
+| `claude.ai.json` | `claude.ai` (`claude`) | `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat` | ProseMirror `[contenteditable]` staging · **`35–37 ms` `0-Net` snap** · deterministic Stop-button wait |
+| `reddit.com.json` | `reddit.com` | `browse_subreddit`, `fetch_subreddit_json`, `read_thread_json`, `search_reddit`, `read_thread` | **`6 ms` `0-Net` snap** · **`99 ms`** `.json?raw_json=1` feed · `{{url.cleanPath}}` nested comment reader |
+| `x.com.json` | `x.com` (`twitter`) | `search_posts`, `open_profile`, `read_timeline_posts`, `draft_post`, `draft_reply` | **`5 ms` `0-Net` snap** · **`~45 ms` timeline tweet extraction** · safe `draft_post` / `draft_reply` |
+| `diagrams.net.json` | `diagrams.net` (`drawio`) | `read_diagram_xml`, `write_diagram_xml`, `insert_shape`, `add_page` | `#fragment` `30s` timeout → `4.96 s`; **`660 ms` `0-Net` XML read** / **`870 ms` write** |
+| `amazon.com.json` | `amazon.com` | `search_products`, `read_product_details` | Soft-gate bypass + 20-iframe ad skip: `16,043 ms` → **`2,491 ms` (6.4×)** |
+| `finance.yahoo.com.json` | `finance.yahoo.com` | `lookup_quote`, `read_quote_summary` | `8,050 ms+` → **`702 ms` (11.5×)** · **`51 ms` `0-Net` `read_quote_summary`** |
+| `youtube.com.json` | `youtube.com` | `search_videos`, `open_transcript` | **`2,042 ms`** video search (avoids 30s Polymer streaming `onload` stall) |
+| `wikipedia.org.json` | `wikipedia.org` | `search_article`, `read_article` | ~8 KB `#cite_note` compaction · **`52 ms` `0-Net` 35k-char `#mw-content-text` read** |
+| `news.ycombinator.com.json` | `news.ycombinator.com` (`hn`) | `read_front_page`, `search_hn` | Flattens `border=0` layout tables; **`32 ms` `0-Net` 30/30 stories untruncated** |
+| `stackoverflow.com.json` | `stackoverflow.com` | `dismiss_cookies`, `search_questions`, `read_qa` | Auto-dismisses OneTrust banner + 1,200-char code blocks + **`~60 ms` `0-Net` Q&A read** |
 
 ---
 

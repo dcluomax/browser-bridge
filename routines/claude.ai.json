@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 2,
+  "domain": "claude.ai",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Page ready in ~865 ms via domcontentloaded + 35 ms snapshot; ProseMirror contenteditable draft staging + deterministic Stop-button streaming wait",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 250,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 60,
+    "submitSettleMs": 80,
+    "dynamicDom": true,
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "Claude uses a ProseMirror [contenteditable='true'] composer inside your signed-in session; call browser_handoff if sign-in is required.",
+    "Use \"draft_prompt\" to stage prompts safely without sending, \"ask_and_wait\" for deterministic streaming completion, or \"read_conversation\"."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "draft_prompt": {
+      "name": "draft_prompt",
+      "description": "Stages a prompt in Claude's ProseMirror composer without clicking Send.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "prompt": { "type": "string", "description": "Prompt text to stage.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{prompt}}",
+            "clear": true,
+            "submit": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "div.ProseMirror[contenteditable='true'], fieldset [contenteditable='true'], textarea" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "ask_and_wait": {
+      "name": "ask_and_wait",
+      "description": "Submits a prompt in Claude, waits deterministically for streaming to finish (Stop button hidden), and extracts the conversation.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "prompt": { "type": "string", "description": "Prompt to send to Claude.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{prompt}}",
+            "clear": true,
+            "submit": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "div.ProseMirror[contenteditable='true'], fieldset [contenteditable='true']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[aria-label*='Send']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": { "seconds": 0.7, "timeoutSeconds": 5 },
+          "optional": true
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "state": "hidden",
+            "timeoutSeconds": 120,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[aria-label*='Stop']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, body" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "reply",
+          "optional": false
+        }
+      ]
+    },
+    "read_conversation": {
+      "name": "read_conversation",
+      "description": "Reads all visible user and Claude messages from <main> in ~35 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, body" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "conversation",
+          "optional": false
+        }
+      ]
+    },
+    "new_chat": {
+      "name": "new_chat",
+      "description": "Opens a new Claude chat thread.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://claude.ai/new",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

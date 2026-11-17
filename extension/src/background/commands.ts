@@ -650,8 +650,17 @@ export class Commands {
       if (visibleIframes === 0 || prof.preferredSnapshotFrames === 'top') {
         frames = [{ frameId: 0, result: top }];
       } else {
-        frames = await callAllFrames<SnapshotFrame>(tab, 'snapshot', [{ maxChars, viewportOnly }]);
-        childFramesScanned = Math.max(0, frames.length - 1);
+        const allOrTimeout = await Promise.race([
+          callAllFrames<SnapshotFrame>(tab, 'snapshot', [{ maxChars, viewportOnly }]),
+          sleep(1_500).then(() => null),
+        ]);
+        if (allOrTimeout) {
+          frames = allOrTimeout;
+          childFramesScanned = Math.max(0, frames.length - 1);
+        } else {
+          frames = [{ frameId: 0, result: top }];
+          childFramesScanned = 1;
+        }
       }
     }
     const parts: string[] = [header];

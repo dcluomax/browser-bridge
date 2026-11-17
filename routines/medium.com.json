@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 2,
+  "domain": "medium.com",
+  "verifiedAt": "2026-11-17T17:55:00Z",
+  "updatedAt": "2026-11-17T17:55:00Z",
+  "updatedAtEpochS": 1794938100,
+  "speedupSummary": "Page open + snapshot: 23,679 ms (Google GSI parser stall + 12,825 ms One-Tap iframe hang) -> ~590 ms (40x faster via commit + hydrationSettleMs + injectImmediately + top-frame)",
+  "accessProfile": {
+    "preferredWaitUntil": "commit",
+    "hydrationSettleMs": 450,
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Medium embeds a background Google Sign-In One-Tap iframe that stalls multi-frame document_idle injection for 12+ seconds; Browser Bridge uses domcontentloaded + snapshotFrames=top + injectImmediately (~15 ms snapshot).",
+    "Use \"read_article\" (~45 ms) to extract clean <article> prose and code blocks, or \"search_stories\"."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_article": {
+      "name": "read_article",
+      "description": "Dismisses optional dismissible sign-in prompt and extracts clean <article> text in ~45 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "article, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "article",
+          "optional": false
+        }
+      ]
+    },
+    "dismiss_meter_modal": {
+      "name": "dismiss_meter_modal",
+      "description": "Closes Medium's dismissible sign-in/app upsell overlay if a close button is present.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 600,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[aria-label='close'], [data-testid='close-button']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        }
+      ]
+    },
+    "search_stories": {
+      "name": "search_stories",
+      "description": "Searches Medium stories by topic/keywords and snapshots matching articles.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Topic or article search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://medium.com/search?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "stories",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

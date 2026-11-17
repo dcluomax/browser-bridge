@@ -1080,9 +1080,12 @@ class Page(_FinderScope):
         arguments: dict[str, Any] | None = None,
         *,
         domain: str | None = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
+        merged_args: dict[str, Any] = {**(arguments or {}), **kwargs}
+        arguments = merged_args
         if isinstance(self.browser._transport, _Transport):
-            params: dict[str, Any] = {"tabId": self.tab_id, "name": name, "arguments": arguments or {}}
+            params: dict[str, Any] = {"tabId": self.tab_id, "name": name, "arguments": arguments}
             if domain:
                 params["domain"] = domain
             return self.browser.call("routine.run", params)
@@ -1116,11 +1119,17 @@ class Page(_FinderScope):
             variables["url.href"] = cur_url
             if parsed_u.scheme and parsed_u.netloc:
                 variables["url.origin"] = f"{parsed_u.scheme}://{parsed_u.netloc}"
+                variables["url.cleanPath"] = f"{parsed_u.scheme}://{parsed_u.netloc}{parsed_u.path.rstrip('/')}"
             segs = [s for s in parsed_u.path.split("/") if s]
             if "d" in segs:
                 d_idx = segs.index("d")
                 if d_idx + 1 < len(segs):
                     variables["url.docId"] = segs[d_idx + 1]
+            if parsed_u.hostname and parsed_u.hostname.lower().endswith("arxiv.org") and len(segs) >= 2 and segs[0] in {"abs", "pdf", "html"}:
+                arxiv_id = "/".join(segs[1:])
+                if arxiv_id.endswith(".pdf"):
+                    arxiv_id = arxiv_id[:-4]
+                variables["url.arxivId"] = arxiv_id
             if parsed_u.hostname and parsed_u.hostname.lower() == "github.com" and len(segs) >= 2:
                 variables["url.repo"] = f"{segs[0]}/{segs[1]}"
             gid_val = "0"

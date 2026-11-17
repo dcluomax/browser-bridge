@@ -1,6 +1,6 @@
 # Browser Bridge Python SDK
 
-The Python SDK (`0.10.0`) connects directly to the Browser Bridge Named Pipe
+The Python SDK (`0.10.1`) connects directly to the Browser Bridge Named Pipe
 (Windows) or Unix Domain Socket (macOS / Linux) with zero intermediate child
 process (`~1.1 ms` median roundtrip). Any external language can connect directly over the
 same open JSON-line IPC protocol, or optionally launch `BrowserBridge rpc` over
@@ -78,9 +78,9 @@ browser.allowlist(clear=True, tab_id=page.tab_id)
 available_pages = browser.pages
 shared_page = browser.page(tab_id)
 
-# Execute built-in timestamped routines/*.json playbooks ({{url.docId}}, {{url.gid}}, {{param:urlencode}}, op="fetch")
+# Execute built-in timestamped routines/*.json playbooks (**kwargs, {{url.docId}}, {{url.gid}}, {{url.arxivId}}, {{url.cleanPath}}, op="fetch")
 csv_out = page.run_routine("read_sheet_csv")
-cell_val = page.run_routine("read_cell", {"cell": "B4"})
+cell_val = page.run_routine("read_cell", cell="B4")
 
 # Interactive human handoff, password-safe demonstration recorder & redacted diagnostics
 # page.handoff("Please complete SSO 2FA, then click Continue")

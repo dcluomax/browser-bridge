@@ -7,7 +7,7 @@
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
 
-const CONTENT_VERSION = '0.10.0';
+const CONTENT_VERSION = '0.10.1';
 
 interface SnapshotOptions {
   maxChars?: number;
@@ -2303,6 +2303,27 @@ function startDemoRecorder(options: {
   return { started: true };
 }
 
+function readNavigationTiming(): {
+  ttfbMs: number;
+  networkMs: number;
+  domContentLoadedMs: number | null;
+  loadEventMs: number | null;
+} | undefined {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (!nav) return undefined;
+    const ttfbMs = Math.max(0, Math.round(nav.responseStart - nav.startTime));
+    const networkMs = Math.max(ttfbMs, Math.round(nav.responseEnd - nav.startTime));
+    const domContentLoadedMs =
+      nav.domContentLoadedEventEnd > 0 ? Math.max(0, Math.round(nav.domContentLoadedEventEnd - nav.startTime)) : null;
+    const loadEventMs =
+      nav.loadEventEnd > 0 ? Math.max(0, Math.round(nav.loadEventEnd - nav.startTime)) : null;
+    return { ttfbMs, networkMs, domContentLoadedMs, loadEventMs };
+  } catch {
+    return undefined;
+  }
+}
+
 const bb = {
   version: CONTENT_VERSION,
   snapshot,
@@ -2339,7 +2360,16 @@ const bb = {
   queryElement,
   queryAll,
   elementState,
-  frameInfo: () => ({ url: location.href, title: document.title, readyState: document.readyState, userAgent: navigator.userAgent, isTop: window === window.top, width: innerWidth, height: innerHeight }),
+  frameInfo: () => ({
+    url: location.href,
+    title: document.title,
+    readyState: document.readyState,
+    userAgent: navigator.userAgent,
+    isTop: window === window.top,
+    width: innerWidth,
+    height: innerHeight,
+    navigationTiming: readNavigationTiming(),
+  }),
 };
 
 export type ContentApi = typeof bb;

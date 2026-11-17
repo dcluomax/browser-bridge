@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "domain": "mail.google.com",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Skips Gmail infinite /bind long-polling onload hang via multi-hop redirect + domcontentloaded (9,032 ms+ -> ~950 ms); safe draft_compose stages emails without clicking Send",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 300,
+    "preferredSnapshotFrames": "top",
+    "submitSettleMs": 120,
+    "directHttpBlocked": true,
+    "directHttpStatus": 401
+  },
+  "notes": [
+    "Gmail keeps persistent /mail/u/0/bind push channels open; Browser Bridge uses domcontentloaded + snapshotFrames=top.",
+    "Use \"search_mail\" (supports Gmail operators like 'from:alice newer_than:7d'), \"read_open_thread\", or \"draft_compose\" (stages To/Subject/Body safely without sending)."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_mail": {
+      "name": "search_mail",
+      "description": "Submits a Gmail search query (e.g. 'is:unread from:boss') in input[name='q'] and snapshots matching threads.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Gmail search query string.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input[aria-label*='Search mail'], input[name='q']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "threads",
+          "optional": false
+        }
+      ]
+    },
+    "read_open_thread": {
+      "name": "read_open_thread",
+      "description": "Extracts the currently open Gmail thread subject, sender headers, and message bodies from [role='main'].",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "[role='main']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "thread",
+          "optional": false
+        }
+      ]
+    },
+    "draft_compose": {
+      "name": "draft_compose",
+      "description": "Opens Gmail Compose and fills recipient, subject, and message body WITHOUT clicking Send so the user always reviews before sending.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "to": { "type": "string", "description": "Recipient email address.", "required": true },
+        "subject": { "type": "string", "description": "Email subject line.", "required": true },
+        "body": { "type": "string", "description": "Plain-text email draft body.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "button", "name": "Compose" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{to}}",
+            "clear": false,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input[aria-label*='To recipients'], input[peoplekit-id], textarea[name='to']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{subject}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input[name='subjectbox']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{body}}",
+            "clear": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "div[aria-label='Message Body'][contenteditable='true'], div[role='textbox'][aria-label*='Message']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 2,
+  "domain": "notion.so",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Workspace/public doc open in ~1,130 ms via domcontentloaded + 16 ms top-frame snapshot; ~50 ms .notion-page-content extraction & instant Ctrl+K quick_find",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 250,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 60,
+    "submitSettleMs": 80,
+    "dynamicDom": true
+  },
+  "notes": [
+    "Matches notion.so, notion.com, and *.notion.site public & workspace pages.",
+    "Use \"read_page\" (~50 ms) to extract full .notion-page-content blocks without left workspace tree clutter, or \"quick_find\" to search via Ctrl+K."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_page": {
+      "name": "read_page",
+      "description": "Extracts clean Notion document blocks and database rows from .notion-page-content / main in ~50 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": ".notion-page-content, main, .notion-frame" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "content",
+          "optional": false
+        }
+      ]
+    },
+    "quick_find": {
+      "name": "quick_find",
+      "description": "Opens Notion's Quick Find modal (Control+K), enters the search query, and snapshots matching workspace pages.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Workspace page title or search keywords.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "press",
+          "params": { "key": "Control+k" },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "[role='dialog'] input, input[placeholder*='Search']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 12000 },
+          "saveAs": "matches",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

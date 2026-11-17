@@ -18,4 +18,5 @@
 
 **Operations & Community**
 - [[CLI and Troubleshooting]]
+- [[Versioning and Site JSON Policy]]
 - [[Contributing and Development]]

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 2,
+  "domain": "linkedin.com",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Multi-hop redirect + domcontentloaded navigation: 9,023 ms ERR_ABORTED stall -> ~1,150 ms; ~55 ms <main> profile/job extraction without messaging/ad rail noise",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 250,
+    "preferredSnapshotFrames": "top",
+    "directHttpBlocked": true,
+    "directHttpStatus": 999
+  },
+  "notes": [
+    "LinkedIn fires multi-hop redirects and continuous tracking beacons; Browser Bridge uses multi-hop redirect tracking + domcontentloaded + snapshotFrames=top.",
+    "Use \"search_jobs\", \"search_people\", or \"read_main_content\" (~55 ms) inside your signed-in LinkedIn session."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_jobs": {
+      "name": "search_jobs",
+      "description": "Searches LinkedIn Jobs by keywords and optional location, returning clean job listings from <main>.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "keywords": { "type": "string", "description": "Job title, skill, or company keywords.", "required": true },
+        "location": { "type": "string", "description": "Optional city/region/Remote.", "required": false, "default": "" }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.linkedin.com/jobs/search/?keywords={{keywords:urlencode}}&location={{location:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 600,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button.contextual-sign-in-modal__modal-dismiss, button[aria-label='Dismiss']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 45000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, #main-content" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "jobs",
+          "optional": false
+        }
+      ]
+    },
+    "search_people": {
+      "name": "search_people",
+      "description": "Searches LinkedIn People inside your signed-in session and snapshots matching profiles.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "keywords": { "type": "string", "description": "Person name, role, or company.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.linkedin.com/search/results/people/?keywords={{keywords:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "people",
+          "optional": false
+        }
+      ]
+    },
+    "read_main_content": {
+      "name": "read_main_content",
+      "description": "Extracts LinkedIn profile details, job description, or feed post from <main> in ~55 ms without chat/ad overlays.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 50000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, #main-content" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "content",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

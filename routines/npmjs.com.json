@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 2,
+  "domain": "npmjs.com",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Skips Cloudflare/analytics child-frame stalls via domcontentloaded + snapshotFrames=top (1,927 ms -> ~15 ms snapshot); ~45 ms #readme package docs extraction",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top",
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "npmjs.com protects pages behind Cloudflare (use your signed-in/verified browser tab; call browser_handoff if a Turnstile challenge appears).",
+    "Use \"read_package_readme\" (~45 ms) to read package README, install command, and version sidebar cleanly, or \"search_packages\"."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_package_readme": {
+      "name": "read_package_readme",
+      "description": "Extracts package README documentation, install command, and metadata from #top / #readme / main in ~45 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#readme, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "readme",
+          "optional": false
+        }
+      ]
+    },
+    "search_packages": {
+      "name": "search_packages",
+      "description": "Searches npm registry packages and snapshots matching package cards.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "npm package name or keywords.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.npmjs.com/search?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "packages",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

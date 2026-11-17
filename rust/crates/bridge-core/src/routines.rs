@@ -103,7 +103,17 @@ fn resolve_site_alias(raw: &str) -> Option<&'static str> {
         | "sheets.google.com"
         | "docs.google.com/spreadsheets"
         | "docs.google.com__spreadsheets" => Some("docs.google.com/spreadsheets"),
+        "gmail" | "gmail.com" | "www.gmail.com" => Some("mail.google.com"),
         "chatgpt" | "chat.openai.com" | "www.chatgpt.com" => Some("chatgpt.com"),
+        "claude" => Some("claude.ai"),
+        "perplexity" | "www.perplexity.ai" => Some("perplexity.ai"),
+        "notion" | "notion.com" | "www.notion.com" | "www.notion.so" => Some("notion.so"),
+        "hf" | "huggingface" => Some("huggingface.co"),
+        "npm" | "www.npmjs.com" => Some("npmjs.com"),
+        "pypi" => Some("pypi.org"),
+        "arxiv" => Some("arxiv.org"),
+        "linkedin" | "www.linkedin.com" => Some("linkedin.com"),
+        "medium" | "www.medium.com" => Some("medium.com"),
         "google" | "google-search" => Some("google.com"),
         "drawio" | "draw.io" | "www.draw.io" => Some("diagrams.net"),
         "twitter" | "twitter.com" | "www.twitter.com" => Some("x.com"),
@@ -176,6 +186,8 @@ pub fn extract_domain(url_or_domain: &str) -> Option<String> {
         return Some("docs.google.com/spreadsheets".to_string());
     } else if clean == "chat.openai.com" {
         return Some("chatgpt.com".to_string());
+    } else if clean == "notion.com" || clean == "www.notion.com" || clean.ends_with(".notion.site") {
+        return Some("notion.so".to_string());
     }
     Some(clean)
 }
@@ -616,13 +628,23 @@ const EMBEDDED_PLAYBOOK_JSONS: &[(&str, &str)] = &[
     ("google.com", include_str!("../../../../routines/google.com.json")),
     ("docs.google.com/document", include_str!("../../../../routines/docs.google.com__document.json")),
     ("docs.google.com/spreadsheets", include_str!("../../../../routines/docs.google.com__spreadsheets.json")),
+    ("mail.google.com", include_str!("../../../../routines/mail.google.com.json")),
     ("github.com", include_str!("../../../../routines/github.com.json")),
     ("chatgpt.com", include_str!("../../../../routines/chatgpt.com.json")),
+    ("claude.ai", include_str!("../../../../routines/claude.ai.json")),
+    ("perplexity.ai", include_str!("../../../../routines/perplexity.ai.json")),
     ("diagrams.net", include_str!("../../../../routines/diagrams.net.json")),
     ("youtube.com", include_str!("../../../../routines/youtube.com.json")),
     ("wikipedia.org", include_str!("../../../../routines/wikipedia.org.json")),
     ("reddit.com", include_str!("../../../../routines/reddit.com.json")),
     ("x.com", include_str!("../../../../routines/x.com.json")),
+    ("linkedin.com", include_str!("../../../../routines/linkedin.com.json")),
+    ("notion.so", include_str!("../../../../routines/notion.so.json")),
+    ("arxiv.org", include_str!("../../../../routines/arxiv.org.json")),
+    ("huggingface.co", include_str!("../../../../routines/huggingface.co.json")),
+    ("npmjs.com", include_str!("../../../../routines/npmjs.com.json")),
+    ("pypi.org", include_str!("../../../../routines/pypi.org.json")),
+    ("medium.com", include_str!("../../../../routines/medium.com.json")),
     ("stackoverflow.com", include_str!("../../../../routines/stackoverflow.com.json")),
     ("amazon.com", include_str!("../../../../routines/amazon.com.json")),
     ("news.ycombinator.com", include_str!("../../../../routines/news.ycombinator.com.json")),
@@ -633,7 +655,6 @@ fn parse_embedded_playbook(key: &str) -> Option<SitePlaybook> {
     let (_, raw) = EMBEDDED_PLAYBOOK_JSONS.iter().find(|(k, _)| *k == key)?;
     serde_json::from_str(raw).ok()
 }
-
 
 fn all_builtin_playbooks() -> Vec<SitePlaybook> {
     EMBEDDED_PLAYBOOK_JSONS
@@ -647,8 +668,14 @@ fn builtin_playbook_for(domain: &str) -> Option<SitePlaybook> {
         parse_embedded_playbook("docs.google.com/document")
     } else if domain == "docs.google.com/spreadsheets" || domain == "sheets.google.com" {
         parse_embedded_playbook("docs.google.com/spreadsheets")
+    } else if domain == "mail.google.com" {
+        parse_embedded_playbook("mail.google.com")
     } else if domain == "chatgpt.com" || domain.ends_with(".chatgpt.com") || domain == "chat.openai.com" {
         parse_embedded_playbook("chatgpt.com")
+    } else if domain == "claude.ai" || domain.ends_with(".claude.ai") {
+        parse_embedded_playbook("claude.ai")
+    } else if domain == "perplexity.ai" || domain.ends_with(".perplexity.ai") {
+        parse_embedded_playbook("perplexity.ai")
     } else if domain == "diagrams.net" || domain.ends_with(".diagrams.net") || domain == "draw.io" || domain.ends_with(".draw.io") {
         parse_embedded_playbook("diagrams.net")
     } else if domain == "google.com" || domain == "www.google.com" {
@@ -663,6 +690,20 @@ fn builtin_playbook_for(domain: &str) -> Option<SitePlaybook> {
         parse_embedded_playbook("reddit.com")
     } else if domain == "x.com" || domain.ends_with(".x.com") || domain == "twitter.com" || domain.ends_with(".twitter.com") {
         parse_embedded_playbook("x.com")
+    } else if domain == "linkedin.com" || domain.ends_with(".linkedin.com") {
+        parse_embedded_playbook("linkedin.com")
+    } else if domain == "notion.so" || domain.ends_with(".notion.so") || domain == "notion.com" || domain.ends_with(".notion.site") {
+        parse_embedded_playbook("notion.so")
+    } else if domain == "arxiv.org" || domain.ends_with(".arxiv.org") {
+        parse_embedded_playbook("arxiv.org")
+    } else if domain == "huggingface.co" || domain.ends_with(".huggingface.co") {
+        parse_embedded_playbook("huggingface.co")
+    } else if domain == "npmjs.com" || domain == "www.npmjs.com" {
+        parse_embedded_playbook("npmjs.com")
+    } else if domain == "pypi.org" || domain.ends_with(".pypi.org") {
+        parse_embedded_playbook("pypi.org")
+    } else if domain == "medium.com" || domain.ends_with(".medium.com") {
+        parse_embedded_playbook("medium.com")
     } else if domain == "stackoverflow.com"
         || domain.ends_with(".stackoverflow.com")
         || domain.ends_with(".stackexchange.com")
@@ -774,17 +815,28 @@ pub fn resolve_playbook(url_or_domain: &str) -> Option<SitePlaybook> {
                     entry.updated_at = epoch_to_iso8601(disk_epoch);
                 }
             }
+            let seed_verified_epoch = entry
+                .verified_at
+                .as_deref()
+                .and_then(iso8601_to_epoch)
+                .unwrap_or(entry.updated_at_epoch_s);
             if let Some(dv) = &disk.verified_at {
                 let dv_s = iso8601_to_epoch(dv).unwrap_or(0);
-                let ev_s = entry.verified_at.as_deref().and_then(iso8601_to_epoch).unwrap_or(0);
-                if dv_s >= ev_s {
+                if dv_s >= seed_verified_epoch {
                     entry.verified_at = Some(dv.clone());
                 }
             }
-            if disk.speedup_summary.is_some() && entry.speedup_summary.is_none() {
+            if disk.speedup_summary.is_some() && (entry.speedup_summary.is_none() || disk_epoch >= seed_verified_epoch) {
                 entry.speedup_summary = disk.speedup_summary.clone();
             }
-            entry.access_profile.merge_overlay(&disk.access_profile);
+            if seed_verified_epoch >= disk_epoch {
+                let seed_profile = entry.access_profile.clone();
+                let mut combined = disk.access_profile;
+                combined.merge_overlay(&seed_profile);
+                entry.access_profile = combined;
+            } else {
+                entry.access_profile.merge_overlay(&disk.access_profile);
+            }
             for note in disk.notes {
                 if !entry.notes.contains(&note) {
                     entry.notes.push(note);
@@ -1961,6 +2013,8 @@ pub fn extract_url_template_vars(raw_url: &str) -> Map<String, Value> {
     let before_hash = rest.split('#').next().unwrap_or(rest);
     let hash_part = rest.split_once('#').map(|(_, h)| h).unwrap_or("");
     let (path_with_host, query_part) = before_hash.split_once('?').unwrap_or((before_hash, ""));
+    let clean_path_url = format!("{scheme}://{}", path_with_host.trim_end_matches('/'));
+    out.insert("url.cleanPath".into(), json!(clean_path_url));
     let path_only = path_with_host
         .split_once('/')
         .map(|(_, p)| p)
@@ -1971,6 +2025,10 @@ pub fn extract_url_template_vars(raw_url: &str) -> Map<String, Value> {
         if let Some(doc_id) = segs.get(d_pos + 1) {
             out.insert("url.docId".into(), json!(*doc_id));
         }
+    }
+    if authority.to_ascii_lowercase().ends_with("arxiv.org") && segs.len() >= 2 && matches!(segs[0], "abs" | "pdf" | "html") {
+        let arxiv_id = segs[1..].join("/").trim_end_matches(".pdf").to_string();
+        out.insert("url.arxivId".into(), json!(arxiv_id));
     }
     if authority.eq_ignore_ascii_case("github.com") && segs.len() >= 2 {
         out.insert("url.repo".into(), json!(format!("{}/{}", segs[0], segs[1])));
@@ -2362,13 +2420,24 @@ mod tests {
             ("https://docs.google.com/document/d/195j9eDD3/edit", "docs.google.com/document", "read_document"),
             ("https://docs.google.com/spreadsheets/d/1BxiMVs0/edit#gid=42", "docs.google.com/spreadsheets", "read_sheet_csv"),
             ("https://sheets.google.com/", "docs.google.com/spreadsheets", "write_cell"),
+            ("https://mail.google.com/mail/u/0/#inbox", "mail.google.com", "search_mail"),
             ("https://chatgpt.com/", "chatgpt.com", "draft_prompt"),
             ("https://chat.openai.com/", "chatgpt.com", "ask_and_wait"),
+            ("https://claude.ai/new", "claude.ai", "draft_prompt"),
+            ("https://www.perplexity.ai/", "perplexity.ai", "ask_search"),
             ("https://www.youtube.com/watch?v=123", "youtube.com", "search_videos"),
             ("https://github.com/torvalds/linux", "github.com", "search_repo_issues"),
             ("https://en.wikipedia.org/wiki/Rust", "wikipedia.org", "search_article"),
-            ("https://www.reddit.com/r/rust/", "reddit.com", "search_reddit"),
-            ("https://x.com/explore", "x.com", "search_posts"),
+            ("https://www.reddit.com/r/rust/", "reddit.com", "fetch_subreddit_json"),
+            ("https://x.com/explore", "x.com", "read_timeline_posts"),
+            ("https://www.linkedin.com/jobs/", "linkedin.com", "search_jobs"),
+            ("https://www.notion.com/help", "notion.so", "read_page"),
+            ("https://team.notion.site/Doc-123", "notion.so", "read_page"),
+            ("https://arxiv.org/abs/1706.03762", "arxiv.org", "open_html_paper"),
+            ("https://huggingface.co/Qwen/Qwen2.5-Coder-32B", "huggingface.co", "read_model_card"),
+            ("https://www.npmjs.com/package/esbuild", "npmjs.com", "read_package_readme"),
+            ("https://pypi.org/project/httpx/", "pypi.org", "read_package_docs"),
+            ("https://medium.com/", "medium.com", "read_article"),
             ("https://stackoverflow.com/questions/1", "stackoverflow.com", "read_qa"),
             ("https://www.amazon.com/", "amazon.com", "search_products"),
             ("https://news.ycombinator.com/", "news.ycombinator.com", "read_front_page"),

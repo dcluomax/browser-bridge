@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 2,
+  "domain": "pypi.org",
+  "verifiedAt": "2026-11-17T17:55:00Z",
+  "updatedAt": "2026-11-17T17:55:00Z",
+  "updatedAtEpochS": 1794938100,
+  "speedupSummary": "Package page navigation + snapshot: 9,097 ms (external badge/ad script stall) -> ~610 ms (14.9x faster via commit + hydrationSettleMs); ~40 ms #description documentation read",
+  "accessProfile": {
+    "preferredWaitUntil": "commit",
+    "hydrationSettleMs": 350,
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "PyPI project pages embed external CI/coverage badge images that stall window.onload >9s; Browser Bridge uses domcontentloaded (~480 ms).",
+    "Use \"read_package_docs\" (~40 ms) to read full project documentation and pip install metadata, or \"search_packages\"."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_package_docs": {
+      "name": "read_package_docs",
+      "description": "Extracts pip install header and full #description / .project-description documentation in ~40 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#description, .project-description, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "docs",
+          "optional": false
+        }
+      ]
+    },
+    "search_packages": {
+      "name": "search_packages",
+      "description": "Searches PyPI Python packages and snapshots matching results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Python package name or keywords.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://pypi.org/search/?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "packages",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

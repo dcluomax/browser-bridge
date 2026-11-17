@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` → `v0.10.0`)
+# Upgrade Notes (`v0.7.0` / `v0.10.0` → `v0.10.1`)
 
-**Browser Bridge `v0.10.0`** introduces **14 git-tracked, timestamped `schemaVersion: 2` site optimization JSON playbooks (`routines/*.json`)**, **5×–31× measured speedups** across Google Search, Google Docs, Google Sheets / Excel, GitHub, ChatGPT, Amazon, Yahoo Finance, and more, plus **5 new MCP tools** (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`) and **silent collapsed `[Agent]` background tab groups**.
+**Browser Bridge `v0.10.1`** expands the timestamped `schemaVersion: 2` site optimization catalog to **24 built-in playbooks (`routines/*.json`)**, formalizes the **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Policy** ([[Versioning and Site JSON Policy]]), adds Chromium MV3 `injectImmediately: true` + multi-hop redirect tracking + `1,500 ms` child-frame bounds delivering **15×–1,800× network-excluded speedups**, and retains all `0.10.0` additions (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`, collapsed `[Agent]` background tab groups).
 
 ---
 
@@ -52,17 +52,20 @@ git pull origin main
 
 ---
 
-## 3. Measured Speedup Benchmarks (`v0.7.0` vs `v0.10.0`)
+## 3. Network-Excluded Speedup Benchmarks (`Unoptimized` vs `v0.10.1`)
 
-| Site & Playbook | Key Engine + Routine Optimizations | Before | After (`v0.10.0`) | Gain |
-| --- | --- | --- | --- | --- |
-| **Google Search** (`google.com.json`) | `domcontentloaded` + `top`-frame + `search`, `read_results`, `next_results_page` | `15,495 ms` | **`1,292–1,423 ms`** | **~11–12×** |
-| **Google Docs** (`docs.google.com__document.json`) | Fast open + `10 ms` Kix `<canvas>` `DOCS_modelChunk` parser + `/mobilebasic` `read_document` | `8,218 ms` / blank `<canvas>` | **`1,528 ms`** open · **`10 ms`** snapshot · **`~170–267 ms`** full doc | **5.4×** + Canvas text |
-| **Google Sheets / Excel** (`docs.google.com__spreadsheets.json`) | Named `#t-name-box` & `#t-formula-bar-input` + `/gviz/tq?tqx=out:csv` + coordinate jump R/W | `8,077 ms` / opaque `<canvas>` | **`259 ms`** cell R/W · **`~201–325 ms`** CSV | **31×** |
-| **GitHub** (`github.com.json`) | `domcontentloaded` + `120 ms` Turbo + 200-link header compaction + `{{url.repo}}` `read_main_content` | `3,469 ms` + truncated | **`~920 ms`** nav · **`~50 ms`** README/PR | **3.8×** + untruncated |
-| **ChatGPT** (`chatgpt.com.json`) | Protected `contentinfo` composer `<form>` + `117 ms` `draft_prompt` + deterministic `stop-button` wait | Clipped input / sleep polling | **`~690–914 ms`** ready · **`117 ms`** draft | Deterministic |
-| **Amazon** (`amazon.com.json`) | Soft-gate bypass + `domcontentloaded` + `top`-frame ad skip | `16,043 ms` | **`2,491 ms`** | **6.4×** |
-| **Yahoo Finance** (`finance.yahoo.com.json`) | `domcontentloaded` + `top`-frame + header compaction | `8,050 ms+` | **`702 ms`** | **11.5×** |
-| **diagrams.net** (`diagrams.net.json`) | PWA `#fragment` fast settle + `<mxGraphModel>` XML read/write/shape | `30,000 ms` timeout | **`660 ms`** read · **`870 ms`** write · **`1.64 s`** shape | Timeout eliminated |
-| **YouTube** (`youtube.com.json`) | `domcontentloaded` + `250 ms` Polymer hydration (`search_videos`, `open_transcript`) | `8s–30s` stall | **`2,042 ms`** | **4–14×** |
-| **Wikipedia / HN / SO / Reddit / X** | `#cite_note` compression, `border=0` layout-table flatten (30/30 stories), OneTrust dismiss + 1.2k code blocks, `403` skip + `shreddit-*` Shadow DOM, Cloudflare handoff | Truncation / `403` retries | Single-call clean extraction | Zero retries |
+HTML network download latency (`navigationTiming.networkMs` via W3C `PerformanceNavigationTiming.responseEnd`) is subtracted so ISP/Wi-Fi speed does not skew comparisons:
+
+| Site & Playbook | Non-Network Bottleneck Solved | Unoptimized *(Excl. Net)* | `v0.10.1` *(Excl. Net)* | Warm `0-Net` Read | Gain |
+| --- | --- | --- | --- | --- | --- |
+| **Perplexity** (`perplexity.ai.json`) | SSE stream hangs MV3 `document_idle` | `18,945–29,000 ms` | **`~450–840 ms`** | **`4–7.8 ms`** snap | **>2,400× (`0-Net`) / ~35×** |
+| **Medium** (`medium.com.json`) | Google One-Tap GSI + iframe hang | `23,163 ms` (`12.8s` snap) | **`586 ms`** | **`5.7–7 ms`** snap | **>1,800× (`0-Net`) / 39×** |
+| **Google Sheets / Excel** (`docs.google.com__spreadsheets.json`) | `<canvas>` grid & UI coordinate detours | `8,077 ms` (`0-Net`) | **`~200 ms`** | **`180–259 ms`** cell R/W | **31×–45× (`0-Net`)** |
+| **Google Search** (`google.com.json`) | `onload` beacons + ad iframes | `~14,978 ms` | **`532 ms`** | **`41 ms`** `read_results` | **28× post-net** |
+| **Google Docs** (`docs.google.com__document.json`) | `0`-text Kix `<canvas>` + sync `onload` | `~6,690 ms` + `0` text | **`~350 ms`** | **`10 ms`** `DOCS_modelChunk` | **`10 ms` `0-Net` Canvas** |
+| **arXiv** (`arxiv.org.json`) | MathJax/font `onload` stall + PDF friction | `~10,100 ms` | **`~550 ms`** | **`12 ms`** `read_abstract` | **18× post-net** |
+| **PyPI** (`pypi.org.json`) | External badge/ad script `onload` stall | `~7,320 ms` | **`491 ms`** | **`40–50 ms`** docs read | **14.9× post-net** |
+| **LinkedIn & Gmail** (`linkedin.com.json`, `mail.google.com.json`) | Multi-hop `3xx`/client redirect + `/bind` | `>8,500 ms` stall | **`~450–950 ms`** | **`6–29 ms`** snap | **~10×–18× post-net** |
+| **GitHub, HF, npm & Notion** (4 JSONs) | 200+ header links truncating `<main>` | `1.9–2.8 s` + truncated | **`~120–350 ms`** | **`13–50 ms`** full read | **Sub-50 ms `0-Net`** |
+| **ChatGPT & Claude** (`chatgpt.com.json`, `claude.ai.json`) | Clipped composer + `5–15 s` blind sleeps | Clipped / blind polling | **`~200–350 ms`** | **`35–37 ms`** read · **`117 ms`** draft | **Deterministic** |
+| **Yahoo, Amazon, Reddit, X, draw.io, Wiki, HN, SO, YouTube** (9 JSONs) | Ad iframes, soft-gate, `shreddit-*`, `#fragment` `30s`, `border=0` tables, `#cite_note`, OneTrust, Polymer | `7.5–30 s` stalls / `403` | **`~250–950 ms`** | **`5 ms`** X · **`32 ms`** HN · **`52 ms`** Wiki · **`99 ms`** Reddit JSON | **Zero timeouts** |

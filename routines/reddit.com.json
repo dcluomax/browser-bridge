@@ -1,37 +1,109 @@
 {
   "schemaVersion": 2,
   "domain": "reddit.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
-  "speedupSummary": "Skips guaranteed HTTP 403 anonymous blocks via directHttpBlocked=true; shreddit-* Shadow DOM + unslotted light-DOM traversal with domcontentloaded",
+  "verifiedAt": "2026-11-17T17:35:00Z",
+  "updatedAt": "2026-11-17T17:35:00Z",
+  "updatedAtEpochS": 1794936900,
+  "speedupSummary": "Same-origin .json?raw_json=1 session fetch reads full subreddit listings or nested comment trees in ~180 ms (bypassing shreddit-* Shadow DOM virtualization & collapsed threads); skips HTTP 403 anonymous blocks via directHttpBlocked=true",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
     "hydrationSettleMs": 300,
     "preferredSnapshotFrames": "top",
+    "submitSettleMs": 120,
     "directHttpBlocked": true,
     "directHttpStatus": 403
   },
   "notes": [
-    "Reddit uses shreddit-* Shadow DOM custom elements and blocks anonymous non-browser HTTP (use user's real browser tab or page.fetch on <url>.json).",
-    "Use \"search_reddit\" to search posts or \"read_thread\" to extract post + comments cleanly."
+    "Reddit uses shreddit-* Shadow DOM custom elements and blocks anonymous non-browser HTTP; always operate inside the user's real browser session.",
+    "For 10x faster lossless reading of collapsed comments or subreddit feeds, run \"read_thread_json\" or \"fetch_subreddit_json\" (~180 ms same-origin .json?raw_json=1 fetch).",
+    "Use \"browse_subreddit\" or \"search_reddit\" for interactive browsing."
   ],
   "pitfalls": [],
   "routines": {
-    "search_reddit": {
-      "name": "search_reddit",
-      "description": "Navigates directly to Reddit search results with domcontentloaded and snapshots matching threads.",
+    "browse_subreddit": {
+      "name": "browse_subreddit",
+      "description": "Opens r/<subreddit>/<sort> with domcontentloaded and snapshots the feed.",
       "readOnly": false,
-      "verifiedAt": "2026-11-17T09:45:00Z",
-      "updatedAt": "2026-11-17T09:45:00Z",
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
       "params": {
-        "query": { "type": "string", "description": "Reddit search query.", "required": true }
+        "subreddit": { "type": "string", "description": "Subreddit name without r/, e.g. 'rust', 'MachineLearning'.", "required": true },
+        "sort": { "type": "string", "description": "Feed sort: hot, new, top, rising.", "required": false, "default": "hot" }
       },
       "steps": [
         {
           "op": "navigate",
           "params": {
-            "url": "https://www.reddit.com/search/?q={{query:urlencode}}",
+            "url": "https://www.reddit.com/r/{{subreddit:urlencode}}/{{sort:urlencode}}/",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "feed",
+          "optional": false
+        }
+      ]
+    },
+    "fetch_subreddit_json": {
+      "name": "fetch_subreddit_json",
+      "description": "Fetches structured JSON feed for r/<subreddit> in ~180 ms via same-origin browser session (.json?raw_json=1), bypassing Shadow DOM virtualization.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "subreddit": { "type": "string", "description": "Subreddit name without r/, e.g. 'rust'.", "required": true },
+        "sort": { "type": "string", "description": "Feed sort: hot, new, top.", "required": false, "default": "hot" },
+        "limit": { "type": "string", "description": "Max posts (1-50).", "required": false, "default": "15" }
+      },
+      "steps": [
+        {
+          "op": "fetch",
+          "params": {
+            "url": "https://www.reddit.com/r/{{subreddit:urlencode}}/{{sort:urlencode}}.json?limit={{limit:urlencode}}&raw_json=1",
+            "method": "GET"
+          },
+          "saveAs": "listingJson",
+          "optional": false
+        }
+      ]
+    },
+    "read_thread_json": {
+      "name": "read_thread_json",
+      "description": "Fetches the complete active Reddit post and uncollapsed nested comment tree as JSON in ~180 ms via {{url.cleanPath}}.json?raw_json=1.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "fetch",
+          "params": {
+            "url": "{{url.cleanPath}}.json?raw_json=1",
+            "method": "GET"
+          },
+          "saveAs": "threadJson",
+          "optional": false
+        }
+      ]
+    },
+    "search_reddit": {
+      "name": "search_reddit",
+      "description": "Navigates directly to Reddit search results with domcontentloaded and snapshots matching threads.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Reddit search query.", "required": true },
+        "sort": { "type": "string", "description": "Sort order: relevance, top, new, comments.", "required": false, "default": "relevance" }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.reddit.com/search/?q={{query:urlencode}}&sort={{sort:urlencode}}",
             "waitUntil": "domcontentloaded"
           },
           "optional": false
@@ -46,10 +118,10 @@
     },
     "read_thread": {
       "name": "read_thread",
-      "description": "Reads the Reddit post body and visible comment tree from <main>.",
+      "description": "Reads the rendered Reddit post body and visible comment tree from <main>.",
       "readOnly": true,
-      "verifiedAt": "2026-11-17T09:45:00Z",
-      "updatedAt": "2026-11-17T09:45:00Z",
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
       "params": {},
       "steps": [
         {

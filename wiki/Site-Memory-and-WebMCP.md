@@ -32,30 +32,28 @@ BrowserBridge routines example.com --reset-profile
 
 A **Routine** collapses a 5–10 step UI interaction into a single deterministic tool call (`browser_routine_run` in MCP or `page.run_routine(...)` in Python).
 
-### Built-In 14-Site Timestamped Playbooks (`v0.10.0`)
+### Built-In 24-Site Timestamped Playbooks (`v0.10.1` · `PATCH 0.10.Z` Policy)
 
-Browser Bridge ships **14 standalone, git-tracked JSON playbooks** in [`routines/*.json`](https://github.com/dcluomax/browser-bridge/tree/main/routines), each carrying ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps plus `speedupSummary`:
+Browser Bridge ships **24 standalone, git-tracked JSON playbooks** in [`routines/*.json`](https://github.com/dcluomax/browser-bridge/tree/main/routines), governed by [[Versioning and Site JSON Policy]] (adding or updating `routines/*.json` increments the **3rd SemVer digit `PATCH 0.10.Z`** with refreshed ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps):
 
-- **Upgrade Auto-Merge:** When upgrading Browser Bridge, built-in routines whose `verifiedAt` is newer than an older local cache's `updatedAt` refresh automatically while keeping custom user routines, learned pitfalls, and notes untouched.
-- **Website-Redesign Drift Detection (`[STALE]`):** After `>= 2` consecutive selector or timeout failures on a routine, Browser Bridge flags it `[STALE - DOM may have changed]` with `staleReason` so agents inspect `browser_snapshot` and save updated selectors.
-- **Path-Scoped Apps, Aliases & Dynamic URL Variables:** Distinguishes `docs.google.com/document` vs `docs.google.com/spreadsheets`, resolves friendly aliases (`google-docs`, `google-sheets`, `google-excel`, `chatgpt`, `drawio`, `hn`), supports `op: "fetch"` (`stripHtml`), `{{param:urlencode}}`, and injects `{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, and `{{url.origin}}`.
+- **Upgrade Auto-Merge (`seed.verifiedAt >= disk.updatedAt`):** Refreshes outdated built-in routines and `accessProfile` latency settings automatically while keeping custom user routines, learned pitfalls, and notes untouched.
+- **Website-Redesign Drift Detection (`[STALE]`):** After `>= 2` consecutive selector or timeout failures on a routine, Browser Bridge flags it `[STALE - DOM may have changed]` with `staleReason`.
+- **Path-Scoped Apps, Aliases & Dynamic URL Variables:** Distinguishes `docs.google.com/document` vs `docs.google.com/spreadsheets`, resolves friendly aliases (`google-docs`, `google-sheets`, `google-excel`, `gmail`, `chatgpt`, `claude`, `perplexity`, `notion`, `hf`, `npm`, `pypi`, `arxiv`, `linkedin`, `medium`, `drawio`, `hn`), supports `op: "fetch"` (`stripHtml`), `{{param:urlencode}}`, Python `**kwargs`, and injects `{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, `{{url.arxivId}}`, `{{url.cleanPath}}`, and `{{url.origin}}`.
 
-| Playbook JSON | Built-in Routines | Measured Speedup |
+| Playbook JSON | Built-in Routines | Network-Excluded / `0-Net` Speedup |
 | --- | --- | --- |
-| `google.com.json` | `search`, `read_results`, `next_results_page` | `15,495 ms` → **`1,292–1,423 ms` (~11–12×)** |
-| `docs.google.com__document.json` | `read_document`, `append_text`, `replace_text`, `rename_document` | `8,218 ms` → **`1,528 ms` (5.4×)** + **`10 ms`** Kix `<canvas>` snapshot + **`~170–267 ms`** `/mobilebasic` |
-| `docs.google.com__spreadsheets.json` | `read_sheet_csv`, `read_cell`, `write_cell`, `select_range`, `rename_spreadsheet` | `8,077 ms` → **`259 ms` (31×)** cell R/W + **`~201–325 ms`** `/gviz/tq` CSV |
-| `github.com.json` | `read_main_content`, `search_github`, `search_repo_issues`, `go_to_file` | `3,469 ms` → **`~920 ms` (3.8×)** + **`~50 ms`** README/PR extraction |
-| `chatgpt.com.json` | `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat` | **`~690–914 ms`** ready + **`117 ms`** safe draft + deterministic `stop-button` wait |
-| `diagrams.net.json` | `read_diagram_xml`, `write_diagram_xml`, `insert_shape`, `add_page` | `#fragment` `30s` timeout → `4.96 s`; **`660 ms`** XML read / **`870 ms`** write |
-| `amazon.com.json` | `search_products`, `read_product_details` | `16,043 ms` → **`2,491 ms` (6.4×)** |
-| `finance.yahoo.com.json` | `lookup_quote`, `read_quote_summary` | `8,050 ms+` → **`702 ms` (11.5×)** |
-| `youtube.com.json` | `search_videos`, `open_transcript` | **`2,042 ms`** video search (avoids 30s streaming `onload` stall) |
-| `wikipedia.org.json` | `search_article`, `read_article` | ~8 KB `#cite_note` compaction + 35k-char article read in **`~2.2 s`** |
-| `news.ycombinator.com.json` | `read_front_page`, `search_hn` | Flattens `border=0` layout tables; 30/30 stories untruncated |
-| `stackoverflow.com.json` | `dismiss_cookies`, `search_questions`, `read_qa` | OneTrust auto-dismiss + 1,200-char code blocks + **`~60 ms`** Q&A read |
-| `reddit.com.json` | `search_reddit`, `read_thread` | `directHttpBlocked=true` (`403` skip) + `shreddit-*` Shadow DOM traversal |
-| `x.com.json` | `search_posts`, `draft_post` | `domcontentloaded` + `350 ms` hydration + Cloudflare `browser_handoff` detection |
+| `perplexity.ai.json` | `draft_query`, `ask_search`, `read_answer` | `18.9s` SSE `document_idle` hang → **`4–7.8 ms` `0-Net` snap (>2,400×)** · **`~450–840 ms` post-net** |
+| `medium.com.json` | `read_article`, `dismiss_meter_modal`, `search_stories` | `12,825 ms` One-Tap iframe hang → **`5.7–7 ms` `0-Net` snap (>1,800×)** · **`586 ms` post-net (39×)** |
+| `docs.google.com__spreadsheets.json` | `read_sheet_csv`, `read_cell`, `write_cell`, `select_range`, `rename_spreadsheet` | `8,077 ms` UI detours → **`180–259 ms` `0-Net` cell R/W (31×–45×)** · **`~201–325 ms`** CSV |
+| `google.com.json` | `search`, `read_results`, `next_results_page` | `~14,978 ms` post-net → **`532 ms` post-net (28×)** · **`41 ms` `0-Net` `read_results`** |
+| `docs.google.com__document.json` | `read_document`, `append_text`, `replace_text`, `rename_document` | **`10 ms` `0-Net` Kix `<canvas>` `DOCS_modelChunk` snap** + **`~170–267 ms`** `/mobilebasic` |
+| `arxiv.org.json` | `read_abstract`, `open_html_paper`, `search_papers` | `~10,100 ms` MathJax stall → **`~550 ms` post-net (18×)** · **`12 ms` `0-Net` `read_abstract`** |
+| `pypi.org.json` | `read_package_docs`, `search_packages` | `~7,320 ms` post-net → **`491 ms` post-net (14.9×)** · **`40–50 ms` `0-Net` docs read** |
+| `linkedin.com.json`, `mail.google.com.json` | `search_jobs`, `search_people`, `read_main_content` / `search_mail`, `read_open_thread`, `draft_compose` | `>8,500 ms` redirect/`/bind` stall → **`~450–950 ms` post-net** · **`6–29 ms` `0-Net` snap** |
+| `github.com.json`, `huggingface.co.json`, `npmjs.com.json`, `notion.so.json` | `read_main_content`, `search_repo_issues` / `read_model_card` / `read_package_readme` / `read_page`, `quick_find` | **`13 ms`** npm · **`18 ms`** HF · **`50 ms`** GitHub/Notion `0-Net` full read (0 header truncation) |
+| `chatgpt.com.json`, `claude.ai.json` | `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat` | **`35–37 ms` `0-Net` read** · **`117 ms` safe draft** · deterministic Stop-button wait |
+| `reddit.com.json`, `x.com.json` | `browse_subreddit`, `fetch_subreddit_json`, `read_thread_json` / `search_posts`, `read_timeline_posts`, `draft_post`, `draft_reply` | **`99 ms`** Reddit `.json?raw_json=1` · **`5–6 ms` `0-Net` snap** · **`~45 ms` X timeline read** |
+| `diagrams.net.json`, `amazon.com.json`, `finance.yahoo.com.json`, `youtube.com.json`, `wikipedia.org.json`, `news.ycombinator.com.json`, `stackoverflow.com.json` | Diagram XML R/W, product search, ticker quote, video transcript, Wiki prose, HN 30 stories, SO Q&A | **`660 ms`** draw.io XML · **`51 ms` `0-Net`** Yahoo quote · **`52 ms` `0-Net`** 35k-char Wiki · **`32 ms` `0-Net`** HN 30/30 |
 
 ### Defining Custom Domain Routines
 Agents (or users) can save reusable routines via `browser_routine_save`:

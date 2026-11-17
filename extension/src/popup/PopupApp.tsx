@@ -17,7 +17,7 @@ import {
 import { buildAgentPrompt, defaultGuidePath, hostOfUrl, isShareableUrl } from './prompt.ts';
 
 declare const __EXT_VERSION__: string;
-const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.10.0';
+const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.10.1';
 
 export interface PopupState {
   status: string;

@@ -1,6 +1,6 @@
-# Upgrade Notes — Migrating from `v0.7.0` to `v0.10.0`
+# Upgrade Notes — Migrating from `v0.7.0` / `v0.10.0` to `v0.10.1`
 
-**Browser Bridge `v0.10.0`** is a backward-compatible feature and performance release (`Protocol v1`) introducing **14 timestamped `schemaVersion: 2` site optimization JSON playbooks (`routines/*.json`)**, **5×–31× real-world speedups** across Google Search, Google Docs, Google Sheets / Excel, GitHub, ChatGPT, Amazon, Yahoo Finance, and more, plus **5 new MCP tools** (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`) and **silent collapsed `[Agent]` background tab groups**.
+**Browser Bridge `v0.10.1`** is a backward-compatible feature and website-optimization release (`Protocol v1`) shipping **24 timestamped `schemaVersion: 2` site optimization JSON playbooks (`routines/*.json`)**, **15×–1,800× network-excluded engine speedups** (via Chromium MV3 `injectImmediately: true`, multi-hop `3xx`/client redirect tracking, and `1,500 ms` child-frame bounds), a formal **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Versioning Policy ([`docs/VERSIONING.md`](VERSIONING.md))**, plus **5 new MCP tools** (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`) and **silent collapsed `[Agent]` background tab groups**.
 
 ---
 
@@ -11,7 +11,7 @@
 Paste this prompt into **GitHub Copilot**, **Claude Code**, **Cursor**, **Windsurf**, or **Cline**:
 
 ```text
-Upgrade Browser Bridge to the latest release (v0.10.0) by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — verify SHA-256 checksums, update BrowserBridge + unpacked extensions + timestamped routines, and confirm `BrowserBridge status` and `BrowserBridge routines` report v0.10.0.
+Upgrade Browser Bridge to the latest release (v0.10.1) by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — verify SHA-256 checksums, update BrowserBridge + unpacked extensions + 24 timestamped routines, and confirm `BrowserBridge status` and `BrowserBridge routines` report v0.10.1.
 ```
 
 Or run the one-line terminal bootstrapper directly:
@@ -65,39 +65,46 @@ Verify your upgrade from a terminal:
 
 ---
 
-## 2. How Timestamped `routines/*.json` Auto-Upgrade Works (`schemaVersion: 2`)
+## 2. How Timestamped `routines/*.json` Auto-Upgrade & `PATCH` (`0.10.Z`) Versioning Work
 
-In `v0.7.0`, only `diagrams.net` shipped as a built-in playbook without verification timestamps. In **`v0.10.0`**, Browser Bridge introduces a **git-tracked, timestamped JSON site-optimization system** (`routines/*.json`, 14 built-in playbooks):
+Per **[`docs/VERSIONING.md`](VERSIONING.md)**, Browser Bridge separates engine/protocol evolution from website playbook updates:
+- **3rd SemVer digit (`PATCH`, `0.10.Z`)**: Always incremented when adding or updating `routines/*.json` website optimization playbooks, refreshing selectors after website redesigns, or tuning per-site latency settings.
+- **2nd SemVer digit (`MINOR`, `0.Y.0`)**: Incremented for new core engine capabilities, new MCP tools/permissions, or new SDK APIs.
+- **1st SemVer digit (`MAJOR`, `X.0.0`)**: Incremented only on breaking wire-protocol or core contract changes.
+
+In **`v0.10.1`**, Browser Bridge ships **24 git-tracked, timestamped JSON site-optimization playbooks** (`routines/*.json`, `schemaVersion: 2`):
 
 1. **ISO-8601 UTC Timestamps (`verifiedAt` & `updatedAt`)**:
-   - Every file in `routines/*.json` and every individual `RoutineDefinition` carries `verifiedAt` (when selectors and speedups were verified against the live site) and `updatedAt` (when the entry was last modified), plus a human-readable `speedupSummary`.
-2. **Non-Destructive Upgrade Merge (`seed_builtin_playbooks_to_disk`)**:
-   - During `BrowserBridge install` (and at runtime via `resolve_playbook`), Browser Bridge compares each built-in routine's `verifiedAt` against your local `%LOCALAPPDATA%\BrowserBridge\routines\*.json` (`~/.browser-bridge/routines/*.json`) `updatedAt`.
-   - Built-in routines with a **newer `verifiedAt`** automatically replace outdated local selectors, while **all custom routines you or your agents created, learned `SiteLearner` pitfalls, and custom domain notes are preserved intact**.
+   - Every file in `routines/*.json` and every individual `RoutineDefinition` carries `verifiedAt` and `updatedAt` plus `speedupSummary`.
+2. **Non-Destructive Upgrade Merge (`seed.verifiedAt >= disk.updatedAt`)**:
+   - During `BrowserBridge install` and runtime `resolve_playbook`, built-in routines with a newer `verifiedAt` automatically replace outdated local selectors, and `seed.verifiedAt >= disk.updatedAt` also upgrades cached `accessProfile` latency parameters — while **preserving all custom user routines, learned pitfalls, and domain notes**.
 3. **Automatic Website-Redesign Drift Guard (`[STALE]`)**:
-   - Websites evolve continuously. Whenever any routine hits **`>= 2` consecutive selector or timeout failures**, Browser Bridge automatically marks `stale: true` with `staleReason` and surfaces `[STALE - DOM may have changed]` in `browser_routine_list` and `BrowserBridge routines`.
-   - Agents immediately know not to retry broken selectors blindly — instead they inspect a fresh `browser_snapshot` and persist updated steps via `browser_routine_save` (which clears `[STALE]` and stamps a fresh `verifiedAt`).
+   - Whenever any routine hits **`>= 2` consecutive selector or timeout failures**, Browser Bridge marks `stale: true` with `staleReason` (`[STALE - DOM may have changed]`) so agents inspect a fresh `browser_snapshot` and update it via `browser_routine_save`.
 4. **Multi-App Path Isolation, Aliases & URL Variables**:
-   - Multi-product hosts are cleanly isolated (`docs.google.com/document` -> `docs.google.com__document.json` vs `docs.google.com/spreadsheets` -> `docs.google.com__spreadsheets.json`).
-   - Friendly domain aliases work out of the box: `google-docs`, `google-sheets`, `google-excel`, `chatgpt`, `google`, `drawio`, `twitter`, `hn`.
-   - Routine steps now support `op: "fetch"` (authenticated in-tab HTTP with optional `stripHtml: true`), URL-encoded parameter substitution (`{{query:urlencode}}`), and automatic live-tab URL extraction (`{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, `{{url.origin}}`, `{{url.href}}`).
+   - Multi-product hosts are cleanly isolated (`docs.google.com/document` vs `docs.google.com/spreadsheets`).
+   - Friendly aliases work out of the box: `google-docs`, `google-sheets`, `google-excel`, `gmail`, `chatgpt`, `claude`, `perplexity`, `notion`, `hf`, `npm`, `pypi`, `arxiv`, `linkedin`, `medium`, `google`, `drawio`, `twitter`, `hn`.
+   - Routine steps support `op: "fetch"` (`stripHtml: true`), `{{query:urlencode}}`, Python `**kwargs` invocation, and live URL variables (`{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, `{{url.arxivId}}`, `{{url.cleanPath}}`, `{{url.origin}}`, `{{url.href}}`).
 
 ---
 
-## 3. Measured Speedup Summary (`v0.7.0` Unoptimized vs `v0.10.0`)
+## 3. Network-Excluded Speedup Summary (`Unoptimized` vs `v0.10.1`)
 
-| Website & Playbook JSON | Key Engine & Routine Optimization | Before (`v0.7.0` Default) | After (`v0.10.0`) | Speedup |
-| --- | --- | --- | --- | --- |
-| **Google Search**<br>`routines/google.com.json` | `domcontentloaded` + `top`-frame fast path + `search(query)`, `read_results()`, `next_results_page()` | `15,495 ms` | **`1,292–1,423 ms`** | **~11–12×** |
-| **Google Docs**<br>`routines/docs.google.com__document.json` | Fast open + native Kix `<canvas>` `DOCS_modelChunk` parser (`10 ms` snapshot, 0 eval/network) + `/mobilebasic` full multi-page `read_document` | `8,218 ms` open / 0-text `<canvas>` | **`1,528 ms`** open · **`10 ms`** snapshot · **`~170–267 ms`** full read | **5.4×** + Canvas unlocked |
-| **Google Sheets / Excel**<br>`routines/docs.google.com__spreadsheets.json` | Named `#t-name-box` & `#t-formula-bar-input` controls + `/gviz/tq?tqx=out:csv` full CSV export + coordinate jump `read_cell` / `write_cell` | `8,077 ms` / unreadable `<canvas>` | **`259 ms`** cell R/W · **`~201–325 ms`** full CSV | **31×** |
-| **GitHub**<br>`routines/github.com.json` | `domcontentloaded` + `120 ms` Turbo settle + 200-link repo header compaction + `{{url.repo}}` `read_main_content` & `search_repo_issues` | `3,469 ms` nav + truncated `<main>` | **`~920 ms`** nav · **`~50 ms`** full README/PR read | **3.8×** + zero truncation |
-| **ChatGPT**<br>`routines/chatgpt.com.json` | Composer `<form>` preservation inside `contentinfo` + `draft_prompt` + deterministic `stop-button` streaming wait (`ask_and_wait`) | Blind sleep loops / clipped input | **`~690–914 ms`** ready · **`117 ms`** safe draft | Deterministic |
-| **Amazon**<br>`routines/amazon.com.json` | Soft-gate bypass + `domcontentloaded` + `top`-frame ad-iframe skip (`search_products`, `read_product_details`) | `16,043 ms` | **`2,491 ms`** | **6.4×** |
-| **Yahoo Finance**<br>`routines/finance.yahoo.com.json` | `domcontentloaded` + `top`-frame + header menu compaction (`lookup_quote`, `read_quote_summary`) | `8,050 ms+` | **`702 ms`** | **11.5×** |
-| **diagrams.net / draw.io**<br>`routines/diagrams.net.json` | Service-worker `#fragment` fast settle + 1-call `<mxGraphModel>` XML read/write/shape routines | `30,000 ms` `#fragment` timeout | **`660 ms`** XML read · **`870 ms`** write · **`1.64 s`** shape | Timeout eliminated |
-| **YouTube**<br>`routines/youtube.com.json` | `domcontentloaded` + `250 ms` Polymer hydration (`search_videos`, `open_transcript`) | `8,000–30,000 ms` streaming stall | **`2,042 ms`** | **4–14×** |
-| **Wikipedia / HN / SO / Reddit / X**<br>5 domain JSON playbooks | `#cite_note` compression (Wikipedia), `border=0` layout-table flattening (HN 30/30 stories), OneTrust dismiss + 1,200-char code blocks (SO), `403` skip + `shreddit-*` Shadow DOM (Reddit), Cloudflare handoff detection (X) | Truncated outlines or `403` retries | Clean single-call extraction | Zero wasted retries |
+Measurements exclude HTML network download time via W3C `PerformanceNavigationTiming.responseEnd` (`navigationTiming.networkMs`, reproducible with `PYTHONPATH=python python scripts/benchmark-sites.py --compare-unoptimized`):
+
+| Website & Playbook JSON | Non-Network Bottleneck Solved | Unoptimized *(Excl. Network)* | `v0.10.1` *(Excl. Network)* | Warm `0-Net` Read / Action | Net-Excluded Gain |
+| --- | --- | --- | --- | --- | --- |
+| **Perplexity** (`perplexity.ai.json`) | SSE stream hangs MV3 `document_idle` | `18,945–29,000 ms` | **`~450–840 ms`** (`injectImmediately`) | **`4–7.8 ms`** snap | **>2,400× (`0-Net`) / ~35×** |
+| **Medium** (`medium.com.json`) | Google One-Tap GSI + iframe hang | `23,163 ms` (`12,825 ms` `0-Net` snap) | **`586 ms`** | **`5.7–7 ms`** snap | **>1,800× (`0-Net`) / 39×** |
+| **Google Sheets / Excel** (`docs.google.com__spreadsheets.json`) | `<canvas>` grid & UI coordinate detours | `8,077 ms` (`0-Net` detours) | **`~200 ms`** | **`180–259 ms`** cell R/W · **`~201–325 ms`** CSV | **31×–45× (`0-Net`)** |
+| **Google Search** (`google.com.json`) | Stalled `onload` beacons + ad iframes | `~14,978 ms` | **`532 ms`** | **`36 ms`** snap · **`41 ms`** `read_results` | **28× post-net** |
+| **Google Docs** (`docs.google.com__document.json`) | `0`-text Kix `<canvas>` + sync `onload` | `~6,690 ms` + `0 chars` `<canvas>` | **`~350 ms`** | **`10 ms`** `0-Net` `DOCS_modelChunk` · **`~170 ms`** `/mobilebasic` | **`10 ms` `0-Net` Canvas** |
+| **arXiv** (`arxiv.org.json`) | MathJax/font `onload` stall + PDF friction | `~10,100 ms` | **`~550 ms`** | **`12 ms`** `read_abstract` + `{{url.arxivId}}` HTML | **18× post-net** |
+| **PyPI** (`pypi.org.json`) | External badge/ad script `onload` stall | `~7,320 ms` | **`491 ms`** | **`15.4 ms`** snap · **`40–50 ms`** `read_package_docs` | **14.9× post-net** |
+| **LinkedIn & Gmail** (`linkedin.com.json`, `mail.google.com.json`) | Multi-hop `3xx`/client redirect + `/bind` poll | `>8,500 ms` stall | **`~450–950 ms`** | **`6–29 ms`** snap + safe `draft_compose` | **~10×–18× post-net** |
+| **Yahoo Finance & Amazon** (`finance.yahoo.com.json`, `amazon.com.json`) | 20+ ad iframes + soft-gate wall | `~7,500–14,500 ms` | **`~350–950 ms`** | **`51 ms`** `read_quote_summary` | **11.5×–140×** |
+| **GitHub, HF, npm & Notion** (4 JSONs) | 200+ header links truncating `<main>` | `1,900–2,800 ms` + truncated | **`~120–350 ms`** | **`13 ms`** npm · **`18 ms`** HF · **`50 ms`** GitHub/Notion | **13–50 ms `0-Net`** |
+| **ChatGPT & Claude** (`chatgpt.com.json`, `claude.ai.json`) | Clipped composer + fixed `5–15 s` sleeps | Clipped input + blind polling | **`~200–350 ms`** | **`35–37 ms`** read · **`117 ms`** draft · Stop-btn wait | **Deterministic** |
+| **Reddit, X, draw.io, Wiki, HN, SO & YouTube** (7 JSONs) | `shreddit-*` virtualization, `#fragment` `30s` timeout, `border=0` tables, `#cite_note`, OneTrust, Polymer | `8,000–30,000 ms` stalls / truncation | **`~250–650 ms`** | **`5 ms`** X · **`32 ms`** HN · **`52 ms`** Wiki · **`99 ms`** Reddit JSON · **`660 ms`** draw.io XML | **Zero timeouts** |
 
 ---
 

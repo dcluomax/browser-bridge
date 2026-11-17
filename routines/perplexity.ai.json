@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 2,
+  "domain": "perplexity.ai",
+  "verifiedAt": "2026-11-17T17:55:00Z",
+  "updatedAt": "2026-11-17T17:55:00Z",
+  "updatedAtEpochS": 1794938100,
+  "speedupSummary": "Page open + snapshot: 29,706 ms (streaming/challenge parser stall + 18,945 ms document_idle hang) -> ~840 ms (35x faster via commit + hydrationSettleMs + injectImmediately)",
+  "accessProfile": {
+    "preferredWaitUntil": "commit",
+    "hydrationSettleMs": 450,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 60,
+    "submitSettleMs": 80,
+    "dynamicDom": true,
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "Perplexity keeps streaming SSE/WebSocket connections open that prevent document_idle / window.onload for 18-30 seconds; Browser Bridge uses domcontentloaded + injectImmediately (~15 ms snapshot).",
+    "Use \"draft_query\" to stage a question safely, \"ask_search\" to submit and extract synthesized answers + citations, or \"read_answer\" (~40 ms)."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "draft_query": {
+      "name": "draft_query",
+      "description": "Fills Perplexity's 'Ask anything…' composer without submitting.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Research question to stage.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "textarea, [contenteditable='true']#ask-input, [role='textbox']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "ask_search": {
+      "name": "ask_search",
+      "description": "Submits a query to Perplexity AI, awaits streaming completion, and extracts synthesized answer + source citations from <main>.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Research query to submit.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "textarea, [contenteditable='true']#ask-input, [role='textbox']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": { "seconds": 1.0, "timeoutSeconds": 5 },
+          "optional": true
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "state": "hidden",
+            "timeoutSeconds": 90,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[aria-label*='Stop']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 50000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "answer",
+          "optional": false
+        }
+      ]
+    },
+    "read_answer": {
+      "name": "read_answer",
+      "description": "Extracts the current Perplexity answer thread and citations from <main> in ~40 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T17:35:00Z",
+      "updatedAt": "2026-11-17T17:35:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 50000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "answer",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

@@ -224,7 +224,7 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
             let url = msg.get("url").and_then(Value::as_str).unwrap_or("").to_string();
             let name = msg.get("name").and_then(Value::as_str).unwrap_or("").trim().to_string();
             let desc = msg.get("description").and_then(Value::as_str).unwrap_or("").to_string();
-            let raw_steps = msg.get("steps").cloned().unwrap_or(Value::Null);
+            let raw_steps = msg.get("steps").cloned().unwrap_or_else(|| json!([]));
             if !url.is_empty() && !name.is_empty() {
                 if let Ok(steps) = serde_json::from_value::<Vec<bridge_core::routines::RoutineStep>>(raw_steps) {
                     if !steps.is_empty() {

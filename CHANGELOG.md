@@ -4,7 +4,38 @@ All notable changes to **Browser Bridge** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-For step-by-step migration instructions from `v0.7.0`, see **[docs/UPGRADE.md](docs/UPGRADE.md)**.
+See **[`docs/VERSIONING.md`](docs/VERSIONING.md)** for the formal SemVer & Site-Optimization Update Specification:
+- **3rd digit (`PATCH`, `x.y.Z`)**: Website optimization JSON additions/refreshes (`routines/*.json`), selector drift updates, and non-breaking latency/bug fixes.
+- **2nd digit (`MINOR`, `x.Y.0`)**: New core engine capabilities, new MCP tools/permissions, or new SDK APIs.
+- **1st digit (`MAJOR`, `X.0.0`)**: Breaking wire-protocol, MCP schema, or SDK changes.
+
+For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)**.
+
+## [0.10.1] - 2026-11-17
+
+### Upgrade Notes (`0.10.0` / `0.7.0` → `0.10.1`)
+- **Patch Version Upgrade (`0.10.1` — 24 Timestamped Site JSONs + MV3/Redirect Latency Fixes)**: Re-run the prebuilt bootstrapper (`irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex` or `curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash`) or source installer (`.\scripts\install.ps1` / `./scripts/install.sh`), reinstall the Python SDK if used (`pip install ./python`), and click **Reload (`↻`)** once on the **Browser Bridge** extension card (`edge://extensions` / `chrome://extensions`).
+- **Codified 3rd-Digit (`PATCH`, `0.10.Z`) Website-Optimization Policy (`docs/VERSIONING.md`)**: Adding or refreshing website optimization playbooks (`routines/*.json`) increments the **3rd SemVer digit (`x.y.Z`)** and updates ISO-8601 UTC `verifiedAt` / `updatedAt` timestamps so local caches auto-upgrade (`seed.verifiedAt >= disk.updatedAt`) across both `routines` and `accessProfile` without overwriting newer user customizations.
+
+### Engine Speed Fixes (`0.10.1`)
+- **Immediate Chromium MV3 Content Injection (`injectImmediately: true`)**: `executeScript` in `extension/src/background/page.ts` now executes as soon as the DOM is ready instead of blocking 12–19 seconds for `document_idle` (`window.onload`) on streaming SSE/WebSocket apps (`perplexity.ai`) or stalled 3rd-party iframes (`medium.com`).
+- **Multi-Hop Redirect Tracking (`watchNavigation`)**: Follows chained HTTP `3xx` + client-side redirects across new `main_frame` `requestId`s (`linkedin.com`, `mail.google.com`), eliminating 9-second false stalls.
+- **Bounded Multi-Frame Snapshots (`1,500 ms` Cap)**: Non-explicit all-frame snapshots in `commands.ts` cap child-frame scanning at `1,500 ms` and fall back cleanly to the captured `top` frame when a cross-origin ad or Google One-Tap iframe hangs.
+- **New Routine URL Variables & Python `**kwargs`**: Added `{{url.cleanPath}}` (used by `reddit.com.json` `.json?raw_json=1` endpoints) and `{{url.arxivId}}` (used by `arxiv.org.json` `/html/{{url.arxivId}}`), plus keyword-argument routine invocation (`page.run_routine("fetch_subreddit_json", subreddit="rust", limit=5)`) in Python.
+
+### Upgraded & Newly Added Website Optimization JSONs (`routines/*.json` — 24 Sites Total)
+- **Upgraded `reddit.com.json`**: Added `browse_subreddit`, same-origin `fetch_subreddit_json` (**`99 ms`** structured JSON), `read_thread_json` (`{{url.cleanPath}}.json?raw_json=1` in **`~120–180 ms`**), `search_reddit` with `sort`, and `read_thread` (`shreddit-post` + comments); subreddit open + snapshot in **`481 ms` (`6 ms` snapshot)**.
+- **Upgraded `x.com.json`**: Added `search_posts` (`live` / `top` filter), `open_profile`, `read_timeline_posts` (`[data-testid="tweet"]` extraction in **`~45 ms`**), `draft_post` (stages without clicking Post), and `draft_reply`; timeline open + snapshot in **`1,272–2,318 ms` (`5–6 ms` snapshot)**.
+- **`perplexity.ai.json` (Perplexity — 23.4× faster)**: `commit` + `450 ms` hydration settle + `injectImmediately` cuts open + snapshot from `29,706 ms` timeout to **`1,267 ms` (`4 ms` snapshot)**; `draft_query`, `ask_search`, `read_answer`.
+- **`medium.com.json` (Medium — >1,800× faster snapshot / 40× open)**: Bypasses stalled Google One-Tap GSI parser/iframe (`12,825 ms` snapshot hang → **`7 ms` snapshot**, `23,679 ms` open+snapshot → **`~590 ms`**); `read_article`, `dismiss_meter_modal`, `search_stories`.
+- **`linkedin.com.json` (LinkedIn — ~10× faster)**: Multi-hop redirect + `domcontentloaded` cuts Jobs/Feed open + snapshot from `>9,000 ms` stall to **`905–1,670 ms` (`29 ms` snapshot)**; `search_jobs`, `search_people`, `read_main_content`.
+- **`pypi.org.json` (PyPI — 6.3×–14.9× faster)**: Bypasses stalled external badge/ad scripts (`9,097 ms` → **`610–1,451 ms`**); `read_package_docs` (`20 KB` full docs in **`~40 ms`**), `search_packages`.
+- **`arxiv.org.json` (arXiv — up to 19.4× faster)**: Cuts MathJax/font `onload` stall (`10,682 ms` → **`550–1,811 ms`**); `read_abstract` (**`12 ms`**), `open_html_paper` via `{{url.arxivId}}` (**`1,041 ms`** full HTML paper), `search_papers`.
+- **`huggingface.co.json` (Hugging Face)**: `domcontentloaded` + `top`-frame (`~850–2,068 ms` open + `29 ms` snapshot, **`~45 ms`** Model Card read); `read_model_card`, `search_models`, `search_datasets`, `search_papers`.
+- **`npmjs.com.json` (npm)**: Clean `#readme` extraction (`1,629 ms` open + **`7–15 ms`** snapshot, **`~45 ms`** README read); `read_package_readme`, `search_packages`.
+- **`notion.so.json` (Notion / `notion.com` / `*.notion.site`)**: Hydrated `[role="main"], .notion-page-content` reader (`1,130–2,314 ms` open + `13–16 ms` snapshot); `read_page`, `quick_find` (`Ctrl+K`).
+- **`claude.ai.json` (Claude)**: Preserves ProseMirror `[contenteditable="true"]` composer (`~865–1,044 ms` ready + `35–37 ms` snapshot); `draft_prompt`, `ask_and_wait`, `read_conversation`, `new_chat`.
+- **`mail.google.com.json` (Gmail)**: Multi-hop redirect + `domcontentloaded` skips infinite `/bind` long-polling hang (`>9,032 ms` → **`950–2,941 ms` open + `6–8 ms` snapshot**); `search_mail`, `read_open_thread`, `draft_compose` (stages draft safely without clicking Send).
 
 ## [0.10.0] - 2026-11-17
 
