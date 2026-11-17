@@ -1,8 +1,8 @@
 # Browser Bridge Python SDK
 
-The Python SDK (`0.7.0`) connects directly to the Browser Bridge Named Pipe
+The Python SDK (`0.10.0`) connects directly to the Browser Bridge Named Pipe
 (Windows) or Unix Domain Socket (macOS / Linux) with zero intermediate child
-process (`~1–4 ms` roundtrip). Any external language can connect directly over the
+process (`~1.1 ms` median roundtrip). Any external language can connect directly over the
 same open JSON-line IPC protocol, or optionally launch `BrowserBridge rpc` over
 stdio. There is no dependency on Playwright, Selenium, a downloaded browser, a
 TCP server or an API token.
@@ -60,13 +60,33 @@ specific host executable. `BROWSER_BRIDGE_BROWSER` and `BROWSER_BRIDGE_HOST` pro
 the same overrides for tests or alternate installs; leave them unset normally.
 All `timeout` arguments are milliseconds.
 
-## Pages and navigation
+## Pages, background tab groups, allowlists, and navigation
 
 ```python
+# Silent background open by default (active=False) inside a collapsed [Agent] group
 page = browser.new_page()
-page = browser.new_page("https://example.com")
+page = browser.new_page(
+    "https://docs.google.com/spreadsheets/d/your-doc-id/edit#gid=0",
+    active=False,
+    name="quarterly-sheet",          # persistent handle reused across scripts (exempt from 10m idle GC)
+    group="Agent",
+    allowed_origins=["https://docs.google.com"],
+)
+browser.allowlist(["*.github.com"], tab_id=page.tab_id)
+browser.allowlist(clear=True, tab_id=page.tab_id)
+
 available_pages = browser.pages
 shared_page = browser.page(tab_id)
+
+# Execute built-in timestamped routines/*.json playbooks ({{url.docId}}, {{url.gid}}, {{param:urlencode}}, op="fetch")
+csv_out = page.run_routine("read_sheet_csv")
+cell_val = page.run_routine("read_cell", {"cell": "B4"})
+
+# Interactive human handoff, password-safe demonstration recorder & redacted diagnostics
+# page.handoff("Please complete SSO 2FA, then click Continue")
+page.start_network_capture(only_failures=True)
+errors = page.console_messages(level="error")
+failed_requests = page.stop_network_capture()
 
 response = page.goto(url, wait_until="domcontentloaded", timeout=45_000)
 page.wait_for_load_state("load", timeout=30_000)
@@ -303,12 +323,15 @@ The individual MCP tools use the same command implementation:
 
 | MCP | Native API |
 | --- | --- |
-| `browser_tabs` | `tabs.list/new/select/close` |
+| `browser_tabs`, `browser_allowlist` | `tabs.list/new/select/close`, `session.allowlist` |
 | `browser_navigate`, `browser_history` | `page.navigate/history` |
 | `browser_snapshot`, `browser_get_text` | `page.snapshot/text` |
 | `browser_locate`, `browser_get_element` | `page.locate/query` |
-| `browser_click/hover/type/fill_form/select_option/press_key/scroll` | `page.click/hover/type/fill/select/press/scroll` |
+| `browser_network`, `browser_console` | `page.network/console` |
+| `browser_click/hover/drag/type/fill_form/select_option/press_key/scroll` | `page.click/hover/drag/type/fill/select/press/scroll` |
 | `browser_set_checked`, `browser_wait_for`, `browser_screenshot` | `page.check/waitFor/screenshot` |
+| `browser_handoff`, `browser_demonstrate` | `page.handoff/demonstrate` |
+| `browser_routine_list/run/save`, `browser_webmcp_list/call` | `site.routines`, `routine.run`, `site.save`, `page.webmcp.list/call` |
 | optional `browser_evaluate` | gated `page.evaluate` |
 
 MCP actions accept `ref` or `locator`, never both. Structured locator examples:

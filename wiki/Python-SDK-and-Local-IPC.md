@@ -18,10 +18,14 @@ python -m pip install ./python
 from browser_bridge import BrowserBridge
 
 with BrowserBridge() as browser:
-    # Opens a background agent-owned tab; closed automatically when exiting `with`
+    # Opens silently in background (active=False default) inside a collapsed [Agent] group; closed on exit
     page = browser.new_page("https://example.com")
     print(page.title(), page.url)
     print(page.locator("h1").first.inner_text())
+
+    # Persistent named tab + allowedOrigins fence + 1-call timestamped routines/*.json execution
+    # sheet = browser.new_page("https://docs.google.com/spreadsheets/d/.../edit#gid=0", name="kpi-sheet", allowed_origins=["https://docs.google.com"])
+    # csv_text = sheet.run_routine("read_sheet_csv")["outputs"]["csv"]
 
     # Capture viewport, full-page, or element screenshots in the background
     page.screenshot("viewport.png")

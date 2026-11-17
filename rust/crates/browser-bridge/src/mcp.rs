@@ -213,6 +213,9 @@ const READ_SAFE_MCP_TOOLS: &[&str] = &[
     "browser_get_element",
     "browser_wait_for",
     "browser_screenshot",
+    "browser_network",
+    "browser_console",
+    "browser_allowlist",
     "browser_webmcp_list",
     "browser_webmcp_call",
     "browser_routine_list",
@@ -235,7 +238,11 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
             "properties": {
                 "action": { "type": "string", "description": "One of: list, new, select, close.", "default": "list" },
                 "tabId": { "type": "integer", "description": "Tab id for select/close." },
+                "name": { "type": "string", "description": "Persistent tab handle name (e.g. 'work-mail'). Reuses the existing named tab on action=new without re-navigating and exempts it from idle auto-close." },
+                "group": { "type": "string", "description": "Collapsed Chromium tab-group title for action=new (default 'Agent'), or group name to close together on action=close." },
                 "url": { "type": "string", "description": "URL to open for action=new." },
+                "active": { "type": "boolean", "default": false, "description": "Open tab in background (false, default) or foreground (true)." },
+                "allowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "Restrict this tab to allowed origins/hosts (e.g. ['https://app.diagrams.net', '*.github.com'])." },
                 "browser": { "type": "string", "description": "Optional browser selector (edge, chrome, firefox, label or instance id)." }
             }
         })
@@ -665,6 +672,86 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
                         },
                         "required": ["name", "steps"]
                     },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_allowlist",
+            "description": if opts.read_only {
+                "Inspects the allowedOrigins domain fence for this session or tab."
+            } else {
+                "Inspects, sets, or clears the allowedOrigins domain fence (e.g. ['https://app.diagrams.net', '*.github.com']) so agent tabs cannot navigate or redirect outside permitted sites."
+            },
+            "annotations": { "readOnlyHint": opts.read_only },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "origins": { "type": "array", "items": { "type": "string" }, "description": "Allowed origins, bare hosts, or '*.domain.com' wildcards. Omit to inspect." },
+                    "clear": { "type": "boolean", "default": false, "description": "Clear the allowlist." },
+                    "tabId": { "type": "integer", "description": "Scope to a single tab instead of the whole session." },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_handoff",
+            "description": "Hands a tab back to the user for human-only steps (login, 2FA/MFA, CAPTCHA/Cloudflare verification, payment). Displays a floating Continue card and WAIT badge on the tab, then resumes automatically once the user clicks Continue.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string", "description": "Short instruction telling the user what to complete before clicking Continue." },
+                    "tabId": { "type": "integer" },
+                    "bringToFront": { "type": "boolean", "default": true },
+                    "timeoutSeconds": { "type": "number", "default": 300 },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_demonstrate",
+            "description": "Asks the user to demonstrate a workflow on the tab while Browser Bridge records their clicks and inputs (never passwords or OTPs). Pass saveAs to persist the recorded steps directly into Site Memory as a fast reusable Routine.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instruction": { "type": "string", "description": "Prompt shown on the floating recorder bar telling the user what flow to demonstrate." },
+                    "saveAs": { "type": "string", "description": "Optional routine name to automatically save into Site Memory upon completion." },
+                    "description": { "type": "string", "description": "Description stored with the saved routine." },
+                    "tabId": { "type": "integer" },
+                    "timeoutSeconds": { "type": "number", "default": 300 },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_network",
+            "description": "Captures and reads credential-redacted HTTP/XHR/fetch traffic on a tab (Authorization, Cookie, API keys, passwords, OTPs, and JWTs are replaced with [REDACTED]).",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["start", "status", "stop", "clear"], "default": "status" },
+                    "onlyFailures": { "type": "boolean", "default": false, "description": "Filter to HTTP >= 400 or network errors." },
+                    "urlInclude": { "type": "string", "description": "Optional substring filter when action=start." },
+                    "limit": { "type": "integer", "default": 100 },
+                    "maxEntries": { "type": "integer", "default": 200 },
+                    "tabId": { "type": "integer" },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_console",
+            "description": "Reads or clears page console messages (log/info/warn/error) and uncaught JavaScript errors/rejections captured since document_start.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["read", "clear"], "default": "read" },
+                    "level": { "type": "string", "enum": ["all", "warn", "error"], "default": "all" },
+                    "limit": { "type": "integer", "default": 100 },
+                    "clear": { "type": "boolean", "default": false },
+                    "tabId": { "type": "integer" },
                     "browser": { "type": "string" }
                 }
             }
@@ -1099,8 +1186,25 @@ async fn call_tool(
                     for tab in tabs {
                         let cur = if tab.get("current").and_then(Value::as_bool) == Some(true) { " (current)" } else { "" };
                         let mode = tab.get("mode").and_then(Value::as_str).unwrap_or("write");
+                        let name_tag = tab
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .map(|n| format!(" #{n}"))
+                            .unwrap_or_default();
+                        let grp_tag = tab
+                            .get("group")
+                            .and_then(Value::as_str)
+                            .map(|g| format!("; group={g}"))
+                            .unwrap_or_default();
+                        let wait_tag = if tab.get("waitingHandoff").and_then(Value::as_bool) == Some(true) {
+                            "; WAIT"
+                        } else if tab.get("running").and_then(Value::as_bool) == Some(true) {
+                            "; RUN"
+                        } else {
+                            ""
+                        };
                         lines.push(format!(
-                            "- [{}]{cur} {} — {} [{}; mode={mode}]",
+                            "- [{}]{name_tag}{cur} {} — {} [{}; mode={mode}{grp_tag}{wait_tag}]",
                             val_str(tab.get("tabId")),
                             val_str(tab.get("title")),
                             val_str(tab.get("url")),
@@ -1114,21 +1218,46 @@ async fn call_tool(
                     if let Some(url) = args.get("url").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
                         p.insert("url".into(), json!(url));
                     }
+                    if let Some(name) = args.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                        p.insert("name".into(), json!(name));
+                    }
+                    if let Some(group) = args.get("group").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                        p.insert("group".into(), json!(group));
+                    }
+                    if let Some(act) = args.get("active").and_then(Value::as_bool) {
+                        p.insert("active".into(), json!(act));
+                    }
+                    if let Some(ao) = args.get("allowedOrigins").and_then(Value::as_array) {
+                        p.insert("allowedOrigins".into(), Value::Array(ao.clone()));
+                    }
                     match client.send("tabs.new", Value::Object(p), browser, Duration::from_secs(60)).await {
-                        Ok((res, _)) => text_ok(format!(
-                            "Opened tab {}: {} — {}. It is now the current tab.",
-                            val_str(res.get("tabId")),
-                            val_str(res.get("title")),
-                            val_str(res.get("url"))
-                        )),
+                        Ok((res, _)) => {
+                            let reused = if res.get("reused").and_then(Value::as_bool) == Some(true) {
+                                "Reused named"
+                            } else {
+                                "Opened"
+                            };
+                            let challenge_note = format_challenge_suffix(&res);
+                            text_ok(format!(
+                                "{reused} tab {}: {} — {}. It is now the current tab.{challenge_note}",
+                                val_str(res.get("tabId")),
+                                val_str(res.get("title")),
+                                val_str(res.get("url"))
+                            ))
+                        }
                         Err(err) => fail(err),
                     }
                 }
                 "select" => {
-                    let Some(tab_id) = args.get("tabId").and_then(Value::as_i64) else {
-                        return text_err("tabId is required for action=select. [bad_request]");
-                    };
-                    match client.send("tabs.select", json!({"tabId": tab_id}), browser, DEFAULT_TIMEOUT).await {
+                    let mut p = Map::new();
+                    add_tab(&mut p, args);
+                    if let Some(n) = args.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                        p.insert("name".into(), json!(n));
+                    }
+                    if !p.contains_key("tabId") && !p.contains_key("name") {
+                        return text_err("tabId or name is required for action=select. [bad_request]");
+                    }
+                    match client.send("tabs.select", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                         Ok((res, _)) => text_ok(format!(
                             "Current tab is now {}: {} — {}",
                             val_str(res.get("tabId")),
@@ -1141,8 +1270,21 @@ async fn call_tool(
                 "close" => {
                     let mut p = Map::new();
                     add_tab(&mut p, args);
+                    if let Some(n) = args.get("name").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                        p.insert("name".into(), json!(n));
+                    }
+                    if let Some(g) = args.get("group").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                        p.insert("group".into(), json!(g));
+                    }
                     match client.send("tabs.close", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
-                        Ok((res, _)) => text_ok(format!("Closed tab {}.", val_str(res.get("closed")))),
+                        Ok((res, _)) => {
+                            if let Some(grp) = res.get("closedGroup").and_then(Value::as_str) {
+                                let cnt = res.get("closedTabs").and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+                                text_ok(format!("Closed {cnt} tab(s) in group '{grp}'."))
+                            } else {
+                                text_ok(format!("Closed tab {}.", val_str(res.get("closed"))))
+                            }
+                        }
                         Err(err) => fail(err),
                     }
                 }
@@ -1161,8 +1303,9 @@ async fn call_tool(
                 Ok((res, _)) => {
                     let loading = if res.get("loaded").and_then(Value::as_bool) == Some(false) { " (still loading)" } else { "" };
                     let final_url = val_str(res.get("url"));
+                    let challenge_note = format_challenge_suffix(&res);
                     let hint = tracker.lock().await.should_inject_hint(&final_url).unwrap_or_default();
-                    text_ok(format!("Tab {}: {} — {final_url}{loading}{hint}", val_str(res.get("tabId")), val_str(res.get("title"))))
+                    text_ok(format!("Tab {}: {} — {final_url}{loading}{challenge_note}{hint}", val_str(res.get("tabId")), val_str(res.get("title"))))
                 }
                 Err(err) => fail(err),
             }
@@ -1182,7 +1325,9 @@ async fn call_tool(
         "browser_snapshot" => {
             let mut p = Map::new();
             p.insert("viewportOnly".into(), json!(args.get("viewportOnly").and_then(Value::as_bool).unwrap_or(false)));
-            p.insert("frames".into(), json!(args.get("frames").and_then(Value::as_str).unwrap_or("all")));
+            if let Some(f) = args.get("frames").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+                p.insert("frames".into(), json!(f));
+            }
             add_tab(&mut p, args);
             if let Some(m) = args.get("maxChars").and_then(Value::as_i64) {
                 p.insert("maxChars".into(), json!(m));
@@ -1719,7 +1864,11 @@ async fn call_tool(
                 Vec::new()
             };
             let out = json!({
+                "schemaVersion": pb.schema_version,
                 "domain": pb.domain,
+                "verifiedAt": pb.verified_at,
+                "updatedAt": pb.updated_at,
+                "speedupSummary": pb.speedup_summary,
                 "accessProfile": pb.access_profile,
                 "notes": pb.notes,
                 "pitfalls": pb.pitfalls,
@@ -1800,6 +1949,142 @@ async fn call_tool(
                 Err(msg) => text_err(format!("{msg} [bad_request]")),
             }
         }
+        "browser_allowlist" => {
+            let has_mutation = args.get("origins").is_some() || args.get("clear").and_then(Value::as_bool) == Some(true);
+            if opts.read_only && has_mutation {
+                return text_err("Modifying allowedOrigins is disabled in --read-only MCP mode. [read_only]");
+            }
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            if let Some(o) = args.get("origins") {
+                p.insert("origins".into(), o.clone());
+            }
+            if let Some(c) = args.get("clear").and_then(Value::as_bool) {
+                p.insert("clear".into(), json!(c));
+            }
+            match client.send("session.allowlist", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
+                Ok((res, _)) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_default()),
+                Err(err) => fail(err),
+            }
+        }
+        "browser_handoff" => {
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            if let Some(m) = args.get("message").and_then(Value::as_str) {
+                p.insert("message".into(), json!(m));
+            }
+            if let Some(fg) = args.get("bringToFront").and_then(Value::as_bool) {
+                p.insert("bringToFront".into(), json!(fg));
+            }
+            let secs = args.get("timeoutSeconds").and_then(Value::as_f64).unwrap_or(300.0).clamp(1.0, 600.0);
+            p.insert("timeoutMs".into(), json!((secs * 1000.0) as u64));
+            let wait_budget = Duration::from_secs_f64(secs + 10.0);
+            match tracked_send(client, tracker, "page.handoff", Value::Object(p), browser, wait_budget).await {
+                Ok((res, _)) => {
+                    let completed = res.get("completed").and_then(Value::as_bool) == Some(true);
+                    let act = res.get("action").and_then(Value::as_str).unwrap_or("unknown");
+                    if completed {
+                        text_ok(format!(
+                            "User completed handoff on tab {}: {} — {}",
+                            val_str(res.get("tabId")),
+                            val_str(res.get("title")),
+                            val_str(res.get("url"))
+                        ))
+                    } else {
+                        text_err(format!(
+                            "Handoff ended without completion (action={act}) on tab {}. [handoff_{act}]",
+                            val_str(res.get("tabId"))
+                        ))
+                    }
+                }
+                Err(err) => fail(err),
+            }
+        }
+        "browser_demonstrate" => {
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            if let Some(inst) = args.get("instruction").and_then(Value::as_str) {
+                p.insert("instruction".into(), json!(inst));
+            }
+            let secs = args.get("timeoutSeconds").and_then(Value::as_f64).unwrap_or(300.0).clamp(1.0, 600.0);
+            p.insert("timeoutMs".into(), json!((secs * 1000.0) as u64));
+            let wait_budget = Duration::from_secs_f64(secs + 10.0);
+            match tracked_send(client, tracker, "page.demonstrate", Value::Object(p), browser, wait_budget).await {
+                Ok((mut res, _)) => {
+                    let completed = res.get("completed").and_then(Value::as_bool) == Some(true);
+                    if completed {
+                        if let Some(save_name) = args.get("saveAs").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+                            let tab_url = res.get("url").and_then(Value::as_str).unwrap_or("");
+                            let raw_steps = res.get("steps").cloned().unwrap_or_else(|| json!([]));
+                            if let Ok(steps) = serde_json::from_value::<Vec<routines::RoutineStep>>(raw_steps) {
+                                if !steps.is_empty() {
+                                    let desc = args
+                                        .get("description")
+                                        .and_then(Value::as_str)
+                                        .filter(|s| !s.is_empty())
+                                        .map(str::to_string)
+                                        .unwrap_or_else(|| format!("User-demonstrated workflow ({} steps).", steps.len()));
+                                    let now_ts = routines::now_iso8601();
+                                    let routine_def = RoutineDefinition {
+                                        name: save_name.to_string(),
+                                        description: desc,
+                                        read_only: false,
+                                        verified_at: Some(now_ts.clone()),
+                                        updated_at: Some(now_ts),
+                                        params: std::collections::BTreeMap::new(),
+                                        steps,
+                                        ..Default::default()
+                                    };
+                                    let _ = client
+                                        .send(
+                                            "site.save",
+                                            json!({ "domain": tab_url, "routine": routine_def }),
+                                            browser,
+                                            Duration::from_secs(3),
+                                        )
+                                        .await;
+                                    if let Ok((path, pb)) = routines::upsert_site_memory(tab_url, None, Some(routine_def), None, false) {
+                                        if let Some(obj) = res.as_object_mut() {
+                                            obj.insert("savedRoutine".into(), json!(save_name));
+                                            obj.insert("savedDomain".into(), json!(pb.domain));
+                                            obj.insert("savedPath".into(), json!(path.display().to_string()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    text_ok(serde_json::to_string_pretty(&res).unwrap_or_else(|_| res.to_string()))
+                }
+                Err(err) => fail(err),
+            }
+        }
+        "browser_network" => {
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            for k in ["action", "onlyFailures", "urlInclude", "limit", "maxEntries"] {
+                if let Some(v) = args.get(k) {
+                    p.insert(k.to_string(), v.clone());
+                }
+            }
+            match tracked_send(client, tracker, "page.network", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
+                Ok((res, _)) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_default()),
+                Err(err) => fail(err),
+            }
+        }
+        "browser_console" => {
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            for k in ["action", "level", "limit", "clear"] {
+                if let Some(v) = args.get(k) {
+                    p.insert(k.to_string(), v.clone());
+                }
+            }
+            match tracked_send(client, tracker, "page.console", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
+                Ok((res, _)) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_default()),
+                Err(err) => fail(err),
+            }
+        }
         "browser_evaluate" if opts.allow_evaluate && !opts.read_only => {
             let Some(expr) = args.get("expression").and_then(Value::as_str) else {
                 return text_err("expression is required. [bad_request]");
@@ -1813,6 +2098,19 @@ async fn call_tool(
             }
         }
         _ => text_err(format!("Unknown tool: {name}")),
+    }
+}
+
+fn format_challenge_suffix(res: &Value) -> String {
+    let Some(ch) = res.get("challenge") else {
+        return String::new();
+    };
+    let kind = ch.get("kind").and_then(Value::as_str).unwrap_or("challenge");
+    let summary = ch.get("summary").and_then(Value::as_str).unwrap_or("");
+    if summary.is_empty() {
+        String::new()
+    } else {
+        format!("\n[Bot Challenge Detected ({kind})]: {summary}")
     }
 }
 

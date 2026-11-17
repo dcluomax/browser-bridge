@@ -17,7 +17,7 @@ import {
 import { buildAgentPrompt, defaultGuidePath, hostOfUrl, isShareableUrl } from './prompt.ts';
 
 declare const __EXT_VERSION__: string;
-const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.5.1';
+const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.10.0';
 
 export interface PopupState {
   status: string;
@@ -35,11 +35,15 @@ export interface PopupState {
     readOnlyMode?: boolean;
     trustedInput: boolean;
     allowEvaluate: boolean;
+    groupAgentTabs?: boolean;
+    idleCloseMinutes?: number;
     label: string;
     locale?: LocaleSetting;
   };
   trustedInputSupported: boolean;
   sessions: Array<{ id: string; name: string }>;
+  handoffs?: Array<{ id: string; tabId: number; origin: string; message: string }>;
+  demonstrations?: Array<{ id: string; tabId: number; origin: string; instruction: string; stepCount: number }>;
   currentTab: {
     id: number;
     title: string;
@@ -256,6 +260,24 @@ export function PopupApp() {
   const activePrompt = currentTab ? promptForTab(currentTab.id, currentTab.url, currentMode, currentTab.title) : '';
   const guidePath = state?.agentGuide || defaultGuidePath();
   const otherTabs = (state?.tabs ?? []).filter((tabItem) => tabItem.id !== currentTab?.id);
+  const pendingHandoffs = state?.handoffs ?? [];
+  const activeDemos = state?.demonstrations ?? [];
+  const currentDemo = currentTab ? activeDemos.find((d) => d.tabId === currentTab.id) : undefined;
+  const isZh = resolvedLocale.startsWith('zh');
+  const isJa = resolvedLocale === 'ja';
+  const uiExtra = {
+    handoffWaitTitle: isZh ? '等待人工操作（WAIT）' : isJa ? 'ユーザー操作待ち (WAIT)' : 'Waiting for you (WAIT)',
+    continueBtn: isZh ? '继续执行' : isJa ? '続行' : 'Continue',
+    cancelBtn: isZh ? '取消' : isJa ? 'キャンセル' : 'Cancel',
+    recordingStatus: (n: number) =>
+      isZh ? `正在录制站点流程（已捕获 ${n} 步）` : isJa ? `手順を記録中 (${n} ステップ)` : `Recording site routine (${n} step${n === 1 ? '' : 's'})`,
+    finishDemoBtn: isZh ? '完成并保存' : isJa ? '完了して保存' : 'Finish & Save',
+    teachBtn: isZh ? '录制流程 (Teach)' : isJa ? '手順を記録' : 'Teach Routine',
+    groupTabsLabel: isZh ? '后台折叠 Agent 标签组' : isJa ? 'Agent タブを背面グループに収納' : 'Collapse agent tabs in background group',
+    groupTabsDesc: isZh ? 'Agent 新开标签默认静默放入折叠的 [Agent] 组，不抢焦点' : isJa ? '新規タブを背面の折りたたみグループで開きます' : 'Open agent tabs silently in a collapsed [Agent] group without stealing focus',
+    idleCloseLabel: isZh ? '空闲标签自动回收' : isJa ? 'アイドルタブの自動クローズ' : 'Auto-close idle agent tabs',
+    idleOff: isZh ? '关闭' : isJa ? 'オフ' : 'Never',
+  };
 
   const localizeAccess = (raw: string) => {
     if (raw.startsWith('in use by ')) return t.accessInUse(raw.slice('in use by '.length));
@@ -336,6 +358,56 @@ export function PopupApp() {
         {(error || state?.status === 'error') && (
           <div className="bb-error-box" role="alert">
             {error || (hostMissing ? t.hostMissing : t.connectionError(state?.error ?? ''))}
+          </div>
+        )}
+
+        {pendingHandoffs.map((ho) => (
+          <div className="bb-upgrade-box" key={ho.id} role="status">
+            <span>
+              <strong>{uiExtra.handoffWaitTitle}</strong> · #{ho.tabId}: {ho.message}
+            </span>
+            <div className="bb-row-actions">
+              <Button
+                label={uiExtra.continueBtn}
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  void sendPopup({ type: 'popup:handoffResolve', tabId: ho.tabId, action: 'continue' }).then(applyState, () => undefined);
+                }}
+              />
+              <Button
+                label={uiExtra.cancelBtn}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void sendPopup({ type: 'popup:handoffResolve', tabId: ho.tabId, action: 'cancel' }).then(applyState, () => undefined);
+                }}
+              />
+            </div>
+          </div>
+        ))}
+
+        {currentDemo && (
+          <div className="bb-upgrade-box" role="status">
+            <span>● {uiExtra.recordingStatus(currentDemo.stepCount)}</span>
+            <div className="bb-row-actions">
+              <Button
+                label={uiExtra.finishDemoBtn}
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  void sendPopup({ type: 'popup:finishDemo', tabId: currentDemo.tabId, action: 'finish' }).then(applyState, () => undefined);
+                }}
+              />
+              <Button
+                label={uiExtra.cancelBtn}
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void sendPopup({ type: 'popup:finishDemo', tabId: currentDemo.tabId, action: 'cancel' }).then(applyState, () => undefined);
+                }}
+              />
+            </div>
           </div>
         )}
 
@@ -429,6 +501,18 @@ export function PopupApp() {
                         <div className="bb-hint">{t.unsharedHint}</div>
                       </>
                     )}
+                    {currentShareable && !currentDemo && !state?.settings.readOnlyMode && (
+                      <div className="bb-cta-row" style={{ marginTop: 6 }}>
+                        <Button
+                          label={uiExtra.teachBtn}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            void sendPopup({ type: 'popup:startDemo', tabId: currentTab.id }).then(() => window.close(), () => undefined);
+                          }}
+                        />
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="bb-hint">{t.noActiveTab}</div>
@@ -503,6 +587,29 @@ export function PopupApp() {
                 value={state?.settings.readOnlyMode ?? false}
                 onChange={(checked) => { void updatePatch({ readOnlyMode: checked }); }}
               />
+              {state?.trustedInputSupported && (
+                <Switch
+                  size="sm"
+                  label={uiExtra.groupTabsLabel}
+                  description={uiExtra.groupTabsDesc}
+                  value={state?.settings.groupAgentTabs ?? true}
+                  onChange={(checked) => { void updatePatch({ groupAgentTabs: checked }); }}
+                />
+              )}
+              <div className="bb-field-block" role="group" aria-label={uiExtra.idleCloseLabel}>
+                <span className="bb-field-label">{uiExtra.idleCloseLabel}</span>
+                <div className="bb-lang-grid">
+                  {[10, 30, 60, 0].map((mins) => (
+                    <Button
+                      key={mins}
+                      label={mins === 0 ? uiExtra.idleOff : `${mins}m`}
+                      variant={(state?.settings.idleCloseMinutes ?? 10) === mins ? 'primary' : 'secondary'}
+                      size="sm"
+                      onClick={() => { void updatePatch({ idleCloseMinutes: mins }); }}
+                    />
+                  ))}
+                </div>
+              </div>
               {state?.trustedInputSupported && (
                 <Switch
                   size="sm"

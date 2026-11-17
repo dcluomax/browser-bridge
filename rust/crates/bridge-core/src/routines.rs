@@ -9,12 +9,78 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const MAX_PITFALLS_PER_SITE: usize = 30;
 const MAX_NOTES_PER_SITE: usize = 30;
 const MAX_TRACE_ENTRIES: usize = 80;
+const STALE_VERIFICATION_SECS: u64 = 90 * 86_400;
 
-fn now_epoch_s() -> u64 {
+pub fn now_epoch_s() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Formats Unix epoch seconds into an ISO-8601 UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`) with zero external dependencies.
+pub fn epoch_to_iso8601(epoch_s: u64) -> String {
+    let days = (epoch_s / 86_400) as i64;
+    let rem = epoch_s % 86_400;
+    let hour = rem / 3_600;
+    let minute = (rem % 3_600) / 60;
+    let second = rem % 60;
+
+    // Howard Hinnant's civil_from_days algorithm (proleptic Gregorian calendar)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    if m <= 2 {
+        y += 1;
+    }
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// Parses an ISO-8601 UTC timestamp (`YYYY-MM-DD...`) back into Unix epoch seconds.
+pub fn iso8601_to_epoch(ts: &str) -> Option<u64> {
+    let s = ts.trim();
+    if s.len() < 10 {
+        return None;
+    }
+    let year: i64 = s.get(0..4)?.parse().ok()?;
+    if s.as_bytes().get(4) != Some(&b'-') || s.as_bytes().get(7) != Some(&b'-') {
+        return None;
+    }
+    let month: u64 = s.get(5..7)?.parse().ok()?;
+    let day: u64 = s.get(8..10)?.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let (hour, minute, second): (u64, u64, u64) = if s.len() >= 19 {
+        (
+            s.get(11..13).and_then(|v| v.parse().ok()).unwrap_or(0),
+            s.get(14..16).and_then(|v| v.parse().ok()).unwrap_or(0),
+            s.get(17..19).and_then(|v| v.parse().ok()).unwrap_or(0),
+        )
+    } else {
+        (0, 0, 0)
+    };
+    let y = year - if month <= 2 { 1 } else { 0 };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let mp = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + (doe as i64) - 719_468;
+    if days < 0 {
+        return None;
+    }
+    Some((days as u64) * 86_400 + hour.min(23) * 3_600 + minute.min(59) * 60 + second.min(59))
+}
+
+pub fn now_iso8601() -> String {
+    epoch_to_iso8601(now_epoch_s())
 }
 
 pub fn routines_directory() -> PathBuf {
@@ -26,16 +92,57 @@ pub fn routines_directory() -> PathBuf {
     data_directory().join("routines")
 }
 
-/// Extracts a clean lowercase hostname from a URL or raw domain string.
-pub fn extract_domain(url_or_domain: &str) -> Option<String> {
-    let trimmed = url_or_domain.trim();
-    if trimmed.is_empty() {
-        return None;
+fn resolve_site_alias(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "google-docs" | "gdocs" | "docs.google.com/document" | "docs.google.com__document" => {
+            Some("docs.google.com/document")
+        }
+        "google-sheets"
+        | "google-excel"
+        | "gsheets"
+        | "sheets.google.com"
+        | "docs.google.com/spreadsheets"
+        | "docs.google.com__spreadsheets" => Some("docs.google.com/spreadsheets"),
+        "chatgpt" | "chat.openai.com" | "www.chatgpt.com" => Some("chatgpt.com"),
+        "google" | "google-search" => Some("google.com"),
+        "drawio" | "draw.io" | "www.draw.io" => Some("diagrams.net"),
+        "twitter" | "twitter.com" | "www.twitter.com" => Some("x.com"),
+        "hn" | "hackernews" => Some("news.ycombinator.com"),
+        _ => None,
     }
+}
+
+fn extract_path(url_or_domain: &str) -> String {
+    let trimmed = url_or_domain.trim();
     let without_scheme = if let Some((_, rest)) = trimmed.split_once("://") {
         rest
     } else {
         trimmed
+    };
+    let before_qh = without_scheme.split(['?', '#']).next().unwrap_or("");
+    if let Some((_, path)) = before_qh.split_once('/') {
+        format!("/{}", path.trim_start_matches('/'))
+    } else {
+        String::new()
+    }
+}
+
+/// Extracts a clean lowercase hostname (or canonical path-scoped site key for multi-app hosts like `docs.google.com/document`).
+pub fn extract_domain(url_or_domain: &str) -> Option<String> {
+    if let Some(alias) = resolve_site_alias(url_or_domain) {
+        return Some(alias.to_string());
+    }
+    let trimmed = url_or_domain.trim().replace("__", "/");
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(alias) = resolve_site_alias(&trimmed) {
+        return Some(alias.to_string());
+    }
+    let without_scheme = if let Some((_, rest)) = trimmed.split_once("://") {
+        rest
+    } else {
+        trimmed.as_str()
     };
     let authority = without_scheme
         .split(['/', '?', '#'])
@@ -55,15 +162,28 @@ pub fn extract_domain(url_or_domain: &str) -> Option<String> {
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '.')
         .collect();
     if clean.is_empty() || (!clean.contains('.') && clean != "localhost") {
-        None
-    } else {
-        Some(clean)
+        return None;
     }
+    let path = extract_path(&trimmed).to_ascii_lowercase();
+    if clean == "docs.google.com" {
+        if path == "/document" || path.starts_with("/document/") {
+            return Some("docs.google.com/document".to_string());
+        }
+        if path == "/spreadsheets" || path.starts_with("/spreadsheets/") {
+            return Some("docs.google.com/spreadsheets".to_string());
+        }
+    } else if clean == "sheets.google.com" {
+        return Some("docs.google.com/spreadsheets".to_string());
+    } else if clean == "chat.openai.com" {
+        return Some("chatgpt.com".to_string());
+    }
+    Some(clean)
 }
 
 pub fn is_loopback_domain(domain: &str) -> bool {
-    domain == "localhost"
-        || domain
+    let host = domain.split('/').next().unwrap_or(domain);
+    host == "localhost"
+        || host
             .parse::<std::net::Ipv4Addr>()
             .is_ok_and(|ip| ip.is_loopback())
 }
@@ -73,35 +193,53 @@ pub fn should_persist_domain(domain: &str) -> bool {
         || std::env::var_os("BROWSER_BRIDGE_ROUTINES_DIR").is_some_and(|v| !v.is_empty())
 }
 
-/// Host-level canonical key for learned access profiles (strips leading `www.` while keeping distinct app subdomains).
+/// Host-or-app canonical key for learned access profiles (strips leading `www.`, preserves `docs.google.com/document` vs `/spreadsheets`).
 pub fn canonical_site_key(url_or_domain: &str) -> Option<String> {
-    let host = extract_domain(url_or_domain)?;
-    if let Some(stripped) = host.strip_prefix("www.") {
+    let extracted = extract_domain(url_or_domain)?;
+    if extracted.contains('/') {
+        return Some(extracted);
+    }
+    if let Some(alias) = resolve_site_alias(&extracted) {
+        return Some(alias.to_string());
+    }
+    if let Some(stripped) = extracted.strip_prefix("www.") {
         if stripped.contains('.') {
             return Some(stripped.to_string());
         }
     }
-    Some(host)
+    Some(extracted)
 }
 
-/// Returns candidate lookup domains from most specific to registrable base (e.g. `["app.diagrams.net", "diagrams.net"]`).
+/// Returns candidate lookup keys from most specific to registrable base (e.g. `["app.diagrams.net", "diagrams.net"]`).
 pub fn domain_candidates(url_or_domain: &str) -> Vec<String> {
-    let Some(host) = extract_domain(url_or_domain) else {
+    let Some(primary) = extract_domain(url_or_domain) else {
         return Vec::new();
     };
-    let mut out = vec![host.clone()];
-    if is_loopback_domain(&host) {
+    if primary.contains('/') {
+        return vec![primary];
+    }
+    let mut out = vec![primary.clone()];
+    if is_loopback_domain(&primary) {
         return out;
     }
-    if let Some(stripped) = host.strip_prefix("www.") {
+    if let Some(stripped) = primary.strip_prefix("www.") {
         if stripped.contains('.') && !out.contains(&stripped.to_string()) {
             out.push(stripped.to_string());
         }
     }
-    let parts: Vec<&str> = host.split('.').collect();
+    if let Some(alias) = resolve_site_alias(&primary) {
+        if !out.contains(&alias.to_string()) {
+            out.push(alias.to_string());
+        }
+    }
+    let parts: Vec<&str> = primary.split('.').collect();
     if parts.len() >= 3 {
         let tail2 = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
-        if tail2.len() >= 5 && !out.contains(&tail2) {
+        let is_multi_app_umbrella = matches!(
+            tail2.as_str(),
+            "google.com" | "github.io" | "googleusercontent.com" | "amazonaws.com" | "azurewebsites.net"
+        ) && !primary.starts_with("www.");
+        if tail2.len() >= 5 && !is_multi_app_umbrella && !out.contains(&tail2) {
             out.push(tail2);
         }
     }
@@ -153,7 +291,7 @@ fn empty_object() -> Value {
     json!({})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoutineDefinition {
     pub name: String,
@@ -161,6 +299,20 @@ pub struct RoutineDefinition {
     pub description: String,
     #[serde(default)]
     pub read_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_succeeded_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_failed_at: Option<String>,
+    #[serde(default)]
+    pub consecutive_failures: u32,
+    #[serde(default)]
+    pub stale: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_reason: Option<String>,
     #[serde(default)]
     pub params: BTreeMap<String, RoutineParamSpec>,
     pub steps: Vec<RoutineStep>,
@@ -398,11 +550,24 @@ impl SiteAccessProfile {
     }
 }
 
+fn default_schema_version() -> u32 {
+    2
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SitePlaybook {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     pub domain: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default)]
     pub updated_at_epoch_s: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speedup_summary: Option<String>,
     #[serde(default)]
     pub access_profile: SiteAccessProfile,
     #[serde(default)]
@@ -415,320 +580,114 @@ pub struct SitePlaybook {
 
 impl SitePlaybook {
     pub fn new(domain: impl Into<String>) -> Self {
+        let now = now_epoch_s();
         Self {
+            schema_version: 2,
             domain: domain.into(),
-            updated_at_epoch_s: now_epoch_s(),
+            verified_at: None,
+            updated_at: epoch_to_iso8601(now),
+            updated_at_epoch_s: now,
+            speedup_summary: None,
             access_profile: SiteAccessProfile::default(),
             notes: Vec::new(),
             pitfalls: Vec::new(),
             routines: BTreeMap::new(),
         }
     }
+
+    pub fn is_verification_aged(&self, now_s: u64) -> bool {
+        let Some(v_ts) = self.verified_at.as_deref().and_then(iso8601_to_epoch) else {
+            return false;
+        };
+        if now_s.saturating_sub(v_ts) < STALE_VERIFICATION_SECS {
+            return false;
+        }
+        // Not aged if any routine succeeded within the window
+        !self.routines.values().any(|r| {
+            r.last_succeeded_at
+                .as_deref()
+                .and_then(iso8601_to_epoch)
+                .is_some_and(|ok_s| now_s.saturating_sub(ok_s) < STALE_VERIFICATION_SECS)
+        })
+    }
 }
 
-fn builtin_diagrams_net() -> SitePlaybook {
-    let mut pb = SitePlaybook::new("diagrams.net");
-    pb.access_profile.service_worker_navigation = true;
-    pb.access_profile.submit_settle_ms = Some(80);
-    pb.notes = vec![
-        "SVG diagram nodes and connector labels appear directly in browser_snapshot as role=\"shape\" with clickable, double-clickable, and draggable [ref=e...] handles.".to_string(),
-        "For lossless diagram reading or generating/editing multi-node diagrams, run routine \"read_diagram_xml\" or \"write_diagram_xml\" (~250 ms in 1 call via Extras -> Edit Diagram) instead of dozens of manual canvas clicks.".to_string(),
-        "Inserting or double-clicking a shape focuses the inline \"Edit Text\" box; press Escape before clicking top menubar items (File, Edit, Extras).".to_string(),
-    ];
+const EMBEDDED_PLAYBOOK_JSONS: &[(&str, &str)] = &[
+    ("google.com", include_str!("../../../../routines/google.com.json")),
+    ("docs.google.com/document", include_str!("../../../../routines/docs.google.com__document.json")),
+    ("docs.google.com/spreadsheets", include_str!("../../../../routines/docs.google.com__spreadsheets.json")),
+    ("github.com", include_str!("../../../../routines/github.com.json")),
+    ("chatgpt.com", include_str!("../../../../routines/chatgpt.com.json")),
+    ("diagrams.net", include_str!("../../../../routines/diagrams.net.json")),
+    ("youtube.com", include_str!("../../../../routines/youtube.com.json")),
+    ("wikipedia.org", include_str!("../../../../routines/wikipedia.org.json")),
+    ("reddit.com", include_str!("../../../../routines/reddit.com.json")),
+    ("x.com", include_str!("../../../../routines/x.com.json")),
+    ("stackoverflow.com", include_str!("../../../../routines/stackoverflow.com.json")),
+    ("amazon.com", include_str!("../../../../routines/amazon.com.json")),
+    ("news.ycombinator.com", include_str!("../../../../routines/news.ycombinator.com.json")),
+    ("finance.yahoo.com", include_str!("../../../../routines/finance.yahoo.com.json")),
+];
 
-    pb.routines.insert(
-        "read_diagram_xml".to_string(),
-        RoutineDefinition {
-            name: "read_diagram_xml".to_string(),
-            description: "Opens Extras -> Edit Diagram, reads the complete <mxGraphModel> XML into outputs.xml, and closes the dialog cleanly via Cancel.".to_string(),
-            read_only: false,
-            params: BTreeMap::new(),
-            steps: vec![
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({ "key": "Escape" }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Extras", "exact": true }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Edit Diagram..." }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "query".into(),
-                    params: json!({
-                        "operation": "inputValue",
-                        "maxChars": 100000,
-                        "locator": {
-                            "steps": [
-                                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
-                                { "kind": "css", "value": "textarea" }
-                            ]
-                        }
-                    }),
-                    save_as: Some("xml".into()),
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": {
-                            "steps": [
-                                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
-                                { "kind": "role", "value": "button", "name": "Cancel", "exact": true }
-                            ]
-                        }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-            ],
-        },
-    );
+fn parse_embedded_playbook(key: &str) -> Option<SitePlaybook> {
+    let (_, raw) = EMBEDDED_PLAYBOOK_JSONS.iter().find(|(k, _)| *k == key)?;
+    serde_json::from_str(raw).ok()
+}
 
-    let mut write_params = BTreeMap::new();
-    write_params.insert(
-        "xml".to_string(),
-        RoutineParamSpec {
-            kind: "string".to_string(),
-            description: "Complete <mxGraphModel>...</mxGraphModel> XML for the active page.".to_string(),
-            required: true,
-            default: None,
-        },
-    );
-    pb.routines.insert(
-        "write_diagram_xml".to_string(),
-        RoutineDefinition {
-            name: "write_diagram_xml".to_string(),
-            description: "Replaces the active draw.io page diagram with the supplied <mxGraphModel> XML in one fast step via Extras -> Edit Diagram -> Apply.".to_string(),
-            read_only: false,
-            params: write_params,
-            steps: vec![
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({ "key": "Escape" }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Extras", "exact": true }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Edit Diagram..." }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "type".into(),
-                    params: json!({
-                        "text": "{{xml}}",
-                        "clear": true,
-                        "locator": {
-                            "steps": [
-                                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
-                                { "kind": "css", "value": "textarea" }
-                            ]
-                        }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": {
-                            "steps": [
-                                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
-                                { "kind": "role", "value": "button", "name": "Apply", "exact": true }
-                            ]
-                        }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-            ],
-        },
-    );
 
-    let mut shape_params = BTreeMap::new();
-    shape_params.insert(
-        "shape".to_string(),
-        RoutineParamSpec {
-            kind: "string".to_string(),
-            description: "Sidebar shape button name (e.g. Rectangle, Rounded Rectangle, Diamond, Cylinder, Cloud, Actor).".to_string(),
-            required: false,
-            default: Some(json!("Rectangle")),
-        },
-    );
-    shape_params.insert(
-        "label".to_string(),
-        RoutineParamSpec {
-            kind: "string".to_string(),
-            description: "Text label to write inside the newly inserted shape.".to_string(),
-            required: false,
-            default: Some(json!("")),
-        },
-    );
-    pb.routines.insert(
-        "insert_shape".to_string(),
-        RoutineDefinition {
-            name: "insert_shape".to_string(),
-            description: "Searches for any shape by name in draw.io's sidebar, inserts it onto the canvas, writes its text label, and exits inline editing.".to_string(),
-            read_only: false,
-            params: shape_params,
-            steps: vec![
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({ "key": "Escape" }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "timeoutMs": 300,
-                        "locator": {
-                            "steps": [
-                                { "kind": "css", "value": "body:has(.geSidebarContainer[style*=\"width: 0px\"])" },
-                                { "kind": "role", "value": "button", "name": "View", "exact": true }
-                            ]
-                        }
-                    }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "timeoutMs": 400,
-                        "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Shapes Ctrl+Shift+K" }] }
-                    }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "type".into(),
-                    params: json!({
-                        "text": "{{shape}}",
-                        "clear": true,
-                        "submit": true,
-                        "locator": { "steps": [{ "kind": "role", "value": "textbox", "name": "Type / to search" }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": {
-                            "steps": [
-                                { "kind": "role", "value": "button", "name": "{{shape}}", "exact": true },
-                                { "kind": "nth", "index": 0 }
-                            ]
-                        }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({
-                        "key": "Enter",
-                        "timeoutMs": 1500,
-                        "locator": { "steps": [{ "kind": "role", "value": "textbox", "name": "Edit Text" }] }
-                    }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "type".into(),
-                    params: json!({
-                        "text": "{{label}}",
-                        "clear": true,
-                        "timeoutMs": 3000,
-                        "locator": { "steps": [{ "kind": "css", "value": ".mxCellEditor" }] }
-                    }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({ "key": "Escape" }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "timeoutMs": 500,
-                        "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Reset", "exact": true }] }
-                    }),
-                    save_as: None,
-                    optional: true,
-                },
-            ],
-        },
-    );
-
-    pb.routines.insert(
-        "add_page".to_string(),
-        RoutineDefinition {
-            name: "add_page".to_string(),
-            description: "Creates and activates a new page tab in the current draw.io diagram.".to_string(),
-            read_only: false,
-            params: BTreeMap::new(),
-            steps: vec![
-                RoutineStep {
-                    op: "press".into(),
-                    params: json!({ "key": "Escape" }),
-                    save_as: None,
-                    optional: true,
-                },
-                RoutineStep {
-                    op: "click".into(),
-                    params: json!({
-                        "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Insert Page", "exact": true }] }
-                    }),
-                    save_as: None,
-                    optional: false,
-                },
-            ],
-        },
-    );
-
-    pb
+fn all_builtin_playbooks() -> Vec<SitePlaybook> {
+    EMBEDDED_PLAYBOOK_JSONS
+        .iter()
+        .filter_map(|(_, raw)| serde_json::from_str::<SitePlaybook>(raw).ok())
+        .collect()
 }
 
 fn builtin_playbook_for(domain: &str) -> Option<SitePlaybook> {
-    if domain == "diagrams.net" || domain.ends_with(".diagrams.net") || domain == "draw.io" || domain.ends_with(".draw.io") {
-        Some(builtin_diagrams_net())
+    if domain == "docs.google.com/document" {
+        parse_embedded_playbook("docs.google.com/document")
+    } else if domain == "docs.google.com/spreadsheets" || domain == "sheets.google.com" {
+        parse_embedded_playbook("docs.google.com/spreadsheets")
+    } else if domain == "chatgpt.com" || domain.ends_with(".chatgpt.com") || domain == "chat.openai.com" {
+        parse_embedded_playbook("chatgpt.com")
+    } else if domain == "diagrams.net" || domain.ends_with(".diagrams.net") || domain == "draw.io" || domain.ends_with(".draw.io") {
+        parse_embedded_playbook("diagrams.net")
+    } else if domain == "google.com" || domain == "www.google.com" {
+        parse_embedded_playbook("google.com")
+    } else if domain == "youtube.com" || domain == "www.youtube.com" || domain == "m.youtube.com" {
+        parse_embedded_playbook("youtube.com")
+    } else if domain == "github.com" || domain == "www.github.com" || domain == "gist.github.com" {
+        parse_embedded_playbook("github.com")
+    } else if domain == "wikipedia.org" || domain.ends_with(".wikipedia.org") {
+        parse_embedded_playbook("wikipedia.org")
+    } else if domain == "reddit.com" || domain.ends_with(".reddit.com") {
+        parse_embedded_playbook("reddit.com")
+    } else if domain == "x.com" || domain.ends_with(".x.com") || domain == "twitter.com" || domain.ends_with(".twitter.com") {
+        parse_embedded_playbook("x.com")
+    } else if domain == "stackoverflow.com"
+        || domain.ends_with(".stackoverflow.com")
+        || domain.ends_with(".stackexchange.com")
+        || domain == "superuser.com"
+        || domain == "serverfault.com"
+        || domain == "askubuntu.com"
+    {
+        parse_embedded_playbook("stackoverflow.com")
+    } else if domain == "amazon.com" || domain == "www.amazon.com" {
+        parse_embedded_playbook("amazon.com")
+    } else if domain == "news.ycombinator.com" {
+        parse_embedded_playbook("news.ycombinator.com")
+    } else if domain == "finance.yahoo.com" {
+        parse_embedded_playbook("finance.yahoo.com")
     } else {
         None
     }
 }
 
+pub fn playbook_filename(site_key: &str) -> String {
+    format!("{}.json", site_key.replace('/', "__"))
+}
+
 fn playbook_path(domain: &str) -> PathBuf {
-    routines_directory().join(format!("{domain}.json"))
+    routines_directory().join(playbook_filename(domain))
 }
 
 pub fn load_exact_playbook(domain: &str) -> Option<SitePlaybook> {
@@ -743,34 +702,88 @@ pub fn save_playbook(playbook: &SitePlaybook) -> Result<PathBuf, String> {
     };
     let dir = routines_directory();
     std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    let path = dir.join(format!("{clean_domain}.json"));
+    let path = dir.join(playbook_filename(&clean_domain));
+    let now = now_epoch_s();
     let mut normalized = playbook.clone();
+    normalized.schema_version = 2;
     normalized.domain = clean_domain;
-    normalized.updated_at_epoch_s = now_epoch_s();
+    normalized.updated_at_epoch_s = now;
+    normalized.updated_at = epoch_to_iso8601(now);
     let pretty = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
     std::fs::write(&path, format!("{pretty}\n")).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
     Ok(path)
 }
 
-/// Loads merged playbook for a URL or domain (combining built-in seed routines with user/agent saved routines & pitfalls).
+/// Seeds or upgrades built-in timestamped JSON playbooks inside `%LOCALAPPDATA%\BrowserBridge\routines\`,
+/// preserving any newer local user routines, learned pitfalls, and notes.
+pub fn seed_builtin_playbooks_to_disk() -> usize {
+    let dir = routines_directory();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return 0;
+    }
+    let mut written = 0usize;
+    for seed in all_builtin_playbooks() {
+        let merged = resolve_playbook(&seed.domain).unwrap_or(seed);
+        let path = dir.join(playbook_filename(&merged.domain));
+        if let Ok(pretty) = serde_json::to_string_pretty(&merged) {
+            let content = format!("{pretty}\n");
+            let unchanged = std::fs::read_to_string(&path).ok().as_deref() == Some(content.as_str());
+            if !unchanged && std::fs::write(&path, content).is_ok() {
+                written += 1;
+            }
+        }
+    }
+    written
+}
+
+fn routine_timestamp_epoch(r: &RoutineDefinition, fallback_epoch: u64) -> u64 {
+    r.updated_at
+        .as_deref()
+        .and_then(iso8601_to_epoch)
+        .or_else(|| r.verified_at.as_deref().and_then(iso8601_to_epoch))
+        .unwrap_or(fallback_epoch)
+}
+
+/// Loads merged playbook for a URL or domain (combining built-in timestamped JSON routines with user/agent saved routines & pitfalls).
+/// When a newer Browser Bridge release ships an updated built-in JSON (`seed.verifiedAt > disk.routine.updatedAt`),
+/// the newer built-in routine definition automatically refreshes stale selectors!
 pub fn resolve_playbook(url_or_domain: &str) -> Option<SitePlaybook> {
     let candidates = domain_candidates(url_or_domain);
     if candidates.is_empty() {
         return None;
     }
     let primary = candidates[0].clone();
-    let mut merged: Option<SitePlaybook> = None;
-
-    for cand in candidates.iter().rev() {
-        if let Some(seed) = builtin_playbook_for(cand) {
-            merged = Some(seed);
-        }
-    }
+    let mut merged: Option<SitePlaybook> = builtin_playbook_for(&primary);
     for cand in candidates.iter().rev() {
         if let Some(disk) = load_exact_playbook(cand) {
+            let disk_epoch = disk
+                .updated_at
+                .as_str()
+                .trim()
+                .is_empty()
+                .then_some(disk.updated_at_epoch_s)
+                .or_else(|| iso8601_to_epoch(&disk.updated_at))
+                .unwrap_or(disk.updated_at_epoch_s);
             let entry = merged.get_or_insert_with(|| SitePlaybook::new(disk.domain.clone()));
             entry.domain = disk.domain;
-            entry.updated_at_epoch_s = entry.updated_at_epoch_s.max(disk.updated_at_epoch_s);
+            if disk_epoch >= entry.updated_at_epoch_s {
+                entry.updated_at_epoch_s = disk_epoch;
+                if !disk.updated_at.trim().is_empty() {
+                    entry.updated_at = disk.updated_at.clone();
+                } else {
+                    entry.updated_at = epoch_to_iso8601(disk_epoch);
+                }
+            }
+            if let Some(dv) = &disk.verified_at {
+                let dv_s = iso8601_to_epoch(dv).unwrap_or(0);
+                let ev_s = entry.verified_at.as_deref().and_then(iso8601_to_epoch).unwrap_or(0);
+                if dv_s >= ev_s {
+                    entry.verified_at = Some(dv.clone());
+                }
+            }
+            if disk.speedup_summary.is_some() && entry.speedup_summary.is_none() {
+                entry.speedup_summary = disk.speedup_summary.clone();
+            }
             entry.access_profile.merge_overlay(&disk.access_profile);
             for note in disk.notes {
                 if !entry.notes.contains(&note) {
@@ -790,8 +803,16 @@ pub fn resolve_playbook(url_or_domain: &str) -> Option<SitePlaybook> {
                     entry.pitfalls.push(p);
                 }
             }
-            for (k, r) in disk.routines {
-                entry.routines.insert(k, r);
+            for (k, disk_r) in disk.routines {
+                if let Some(seed_r) = entry.routines.get(&k) {
+                    let seed_ts = routine_timestamp_epoch(seed_r, 0);
+                    let disk_ts = routine_timestamp_epoch(&disk_r, disk_epoch);
+                    if seed_ts > disk_ts {
+                        // Built-in JSON was updated more recently (e.g. minor version upgrade after a website redesign).
+                        continue;
+                    }
+                }
+                entry.routines.insert(k, disk_r);
             }
         }
     }
@@ -799,14 +820,18 @@ pub fn resolve_playbook(url_or_domain: &str) -> Option<SitePlaybook> {
         if pb.domain.is_empty() {
             pb.domain = primary;
         }
+        if pb.updated_at.trim().is_empty() && pb.updated_at_epoch_s > 0 {
+            pb.updated_at = epoch_to_iso8601(pb.updated_at_epoch_s);
+        }
     }
     merged
 }
 
 pub fn list_all_playbooks() -> Vec<SitePlaybook> {
     let mut by_domain: BTreeMap<String, SitePlaybook> = BTreeMap::new();
-    let seed = builtin_diagrams_net();
-    by_domain.insert(seed.domain.clone(), seed);
+    for seed in all_builtin_playbooks() {
+        by_domain.insert(seed.domain.clone(), seed);
+    }
 
     if let Ok(entries) = std::fs::read_dir(routines_directory()) {
         for entry in entries.flatten() {
@@ -966,10 +991,19 @@ pub fn upsert_site_memory(
     if let Some(del) = delete_routine.map(str::trim).filter(|s| !s.is_empty()) {
         pb.routines.remove(del);
     }
-    if let Some(r) = routine {
+    if let Some(mut r) = routine {
         if r.name.trim().is_empty() || r.steps.is_empty() {
             return Err("Routine requires a non-empty name and at least one step.".to_string());
         }
+        let ts = now_iso8601();
+        r.updated_at = Some(ts.clone());
+        if r.verified_at.is_none() {
+            r.verified_at = Some(ts.clone());
+        }
+        r.stale = false;
+        r.stale_reason = None;
+        r.consecutive_failures = 0;
+        pb.verified_at = Some(ts);
         pb.routines.insert(r.name.trim().to_string(), r);
     }
     let path = save_playbook(&pb)?;
@@ -977,12 +1011,75 @@ pub fn upsert_site_memory(
     Ok((path, merged))
 }
 
+/// Tracks routine execution health per website and marks routines `stale = true` when consecutive selector/DOM
+/// errors indicate the target website redesigned its UI since `verifiedAt`.
+pub fn record_routine_outcome_on_disk(
+    url_or_domain: &str,
+    routine_name: &str,
+    ok: bool,
+    failure_detail: Option<&str>,
+) {
+    let Some(site_key) = canonical_site_key(url_or_domain) else {
+        return;
+    };
+    if !should_persist_domain(&site_key) {
+        return;
+    }
+    let mut pb = resolve_playbook(&site_key).unwrap_or_else(|| SitePlaybook::new(site_key.clone()));
+    let Some(r) = pb.routines.get_mut(routine_name) else {
+        return;
+    };
+    let ts = now_iso8601();
+    if ok {
+        let was_dirty = r.stale || r.consecutive_failures > 0 || r.last_succeeded_at.is_none();
+        r.last_succeeded_at = Some(ts);
+        r.consecutive_failures = 0;
+        r.stale = false;
+        r.stale_reason = None;
+        if was_dirty {
+            let _ = save_playbook(&pb);
+        }
+    } else {
+        let detail = failure_detail.unwrap_or("");
+        let is_selector_drift = detail.contains("[timeout]")
+            || detail.contains("[not_actionable]")
+            || detail.contains("[strict_locator]")
+            || detail.contains("[page_error]");
+        if !is_selector_drift {
+            return;
+        }
+        r.consecutive_failures = r.consecutive_failures.saturating_add(1);
+        r.last_failed_at = Some(ts);
+        if r.consecutive_failures >= 2 {
+            let v_ts = r
+                .verified_at
+                .as_deref()
+                .or(pb.verified_at.as_deref())
+                .unwrap_or("unknown");
+            r.stale = true;
+            r.stale_reason = Some(format!(
+                "Failed {}x consecutively since verifiedAt {v_ts}; website DOM may have redesigned — inspect snapshot and update via browser_routine_save.",
+                r.consecutive_failures
+            ));
+        }
+        let _ = save_playbook(&pb);
+    }
+}
+
 pub fn format_site_memory_hint_from_playbook(pb: &SitePlaybook) -> Option<String> {
     let perf_lines = pb.access_profile.summary_lines();
     if pb.routines.is_empty() && pb.notes.is_empty() && pb.pitfalls.is_empty() && perf_lines.is_empty() {
         return None;
     }
-    let mut lines = vec![format!("\n[Site Memory & Fast Routines — {}]", pb.domain)];
+    let ts_tag = pb
+        .verified_at
+        .as_deref()
+        .map(|v| format!(" (verified {v})"))
+        .unwrap_or_default();
+    let mut lines = vec![format!("\n[Site Memory & Fast Routines — {}{ts_tag}]", pb.domain)];
+    if pb.is_verification_aged(now_epoch_s()) {
+        lines.push("Notice: site JSON verification timestamp is >90 days old; if selectors fail after a site redesign, inspect snapshot and refresh via browser_routine_save.".to_string());
+    }
     for pl in perf_lines.iter().take(3) {
         lines.push(pl.clone());
     }
@@ -992,10 +1089,11 @@ pub fn format_site_memory_hint_from_playbook(pb: &SitePlaybook) -> Option<String
             .values()
             .map(|r| {
                 let args: Vec<&str> = r.params.keys().map(String::as_str).collect();
+                let stale_prefix = if r.stale { "[STALE] " } else { "" };
                 if args.is_empty() {
-                    r.name.clone()
+                    format!("{stale_prefix}{}", r.name)
                 } else {
-                    format!("{}({})", r.name, args.join(", "))
+                    format!("{stale_prefix}{}({})", r.name, args.join(", "))
                 }
             })
             .collect();
@@ -1003,6 +1101,11 @@ pub fn format_site_memory_hint_from_playbook(pb: &SitePlaybook) -> Option<String
             "Available routines (call browser_routine_run to execute in 1 step): {}",
             summary.join(" | ")
         ));
+        for stale_r in pb.routines.values().filter(|r| r.stale).take(1) {
+            if let Some(reason) = &stale_r.stale_reason {
+                lines.push(format!("Redesign warning on '{}': {reason}", stale_r.name));
+            }
+        }
     }
     for note in pb.notes.iter().take(2) {
         lines.push(format!("Tip: {note}"));
@@ -1772,7 +1875,9 @@ impl SiteLearner {
 
         if dirty {
             if let Some(pb) = self.playbooks.get_mut(&key) {
-                pb.updated_at_epoch_s = now_epoch_s();
+                let now = now_epoch_s();
+                pb.updated_at_epoch_s = now;
+                pb.updated_at = epoch_to_iso8601(now);
                 if should_persist_domain(&key) {
                     return Some(pb.clone());
                 }
@@ -1815,6 +1920,7 @@ pub fn canonical_step_method(op: &str) -> Result<&'static str, String> {
         "snapshot" | "page.snapshot" => Ok("page.snapshot"),
         "text" | "get_text" | "page.text" => Ok("page.text"),
         "screenshot" | "page.screenshot" => Ok("page.screenshot"),
+        "fetch" | "page.fetch" => Ok("page.fetch"),
         "navigate" | "goto" | "page.navigate" => Ok("page.navigate"),
         "history" | "page.history" => Ok("page.history"),
         "webmcp.list" | "page.webmcp.list" => Ok("page.webmcp.list"),
@@ -1834,8 +1940,129 @@ pub fn is_read_safe_step(method: &str) -> bool {
             | "page.queryAll"
             | "page.waitFor"
             | "page.screenshot"
+            | "page.fetch"
             | "page.webmcp.list"
     )
+}
+
+pub fn extract_url_template_vars(raw_url: &str) -> Map<String, Value> {
+    let mut out = Map::new();
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        out.insert("url.gid".into(), json!("0"));
+        return out;
+    }
+    out.insert("url.href".into(), json!(trimmed));
+    let (scheme, rest) = trimmed.split_once("://").unwrap_or(("https", trimmed));
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if !authority.is_empty() {
+        out.insert("url.origin".into(), json!(format!("{scheme}://{authority}")));
+    }
+    let before_hash = rest.split('#').next().unwrap_or(rest);
+    let hash_part = rest.split_once('#').map(|(_, h)| h).unwrap_or("");
+    let (path_with_host, query_part) = before_hash.split_once('?').unwrap_or((before_hash, ""));
+    let path_only = path_with_host
+        .split_once('/')
+        .map(|(_, p)| p)
+        .unwrap_or("");
+    let segs: Vec<&str> = path_only.split('/').filter(|s| !s.is_empty()).collect();
+
+    if let Some(d_pos) = segs.iter().position(|s| *s == "d") {
+        if let Some(doc_id) = segs.get(d_pos + 1) {
+            out.insert("url.docId".into(), json!(*doc_id));
+        }
+    }
+    if authority.eq_ignore_ascii_case("github.com") && segs.len() >= 2 {
+        out.insert("url.repo".into(), json!(format!("{}/{}", segs[0], segs[1])));
+    }
+
+    let mut gid = "0".to_string();
+    for src in [query_part, hash_part] {
+        for pair in src.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                if k == "gid" && !v.is_empty() {
+                    gid = v.to_string();
+                }
+            }
+        }
+    }
+    out.insert("url.gid".into(), json!(gid));
+    out
+}
+
+pub fn strip_html_to_text(html: &str) -> String {
+    let mut cleaned = String::with_capacity(html.len() / 2);
+    let bytes = html.as_bytes();
+    let lower = html.to_ascii_lowercase();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'<' {
+            if lower[i..].starts_with("<script") {
+                if let Some(end) = lower[i..].find("</script>") {
+                    i += end + "</script>".len();
+                    continue;
+                }
+            } else if lower[i..].starts_with("<style") {
+                if let Some(end) = lower[i..].find("</style>") {
+                    i += end + "</style>".len();
+                    continue;
+                }
+            } else if lower[i..].starts_with("<head") {
+                if let Some(end) = lower[i..].find("</head>") {
+                    i += end + "</head>".len();
+                    continue;
+                }
+            }
+            if let Some(close) = html[i..].find('>') {
+                let tag = lower[i + 1..i + close].trim_start_matches('/').split_whitespace().next().unwrap_or("");
+                if matches!(tag, "p" | "div" | "br" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "table") {
+                    cleaned.push('\n');
+                } else if matches!(tag, "td" | "th") {
+                    cleaned.push('\t');
+                }
+                i += close + 1;
+                continue;
+            }
+        }
+        let ch = html[i..].chars().next().unwrap_or(' ');
+        cleaned.push(ch);
+        i += ch.len_utf8();
+    }
+    let decoded = cleaned
+        .replace("&nbsp;", " ")
+        .replace("&#160;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    let mut lines = Vec::new();
+    let mut prev_empty = true;
+    for raw_line in decoded.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            if !prev_empty {
+                lines.push(String::new());
+                prev_empty = true;
+            }
+        } else {
+            lines.push(line.to_string());
+            prev_empty = false;
+        }
+    }
+    lines.join("\n").trim().to_string()
+}
+
+fn percent_encode_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for b in raw.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 fn interpolate_value(template: &Value, vars: &Map<String, Value>) -> Value {
@@ -1843,7 +2070,7 @@ fn interpolate_value(template: &Value, vars: &Map<String, Value>) -> Value {
         Value::String(s) => {
             if let Some(inner) = s.strip_prefix("{{").and_then(|rest| rest.strip_suffix("}}")) {
                 let key = inner.trim();
-                if !key.contains('{') && !key.contains('}') {
+                if !key.contains('{') && !key.contains('}') && !key.contains(':') {
                     if let Some(exact) = vars.get(key) {
                         return exact.clone();
                     }
@@ -1851,13 +2078,17 @@ fn interpolate_value(template: &Value, vars: &Map<String, Value>) -> Value {
             }
             let mut rendered = s.clone();
             for (k, v) in vars {
+                let rep = match v {
+                    Value::String(vs) => vs.clone(),
+                    Value::Null => String::new(),
+                    other => other.to_string(),
+                };
+                let enc_token = format!("{{{{{k}:urlencode}}}}");
+                if rendered.contains(&enc_token) {
+                    rendered = rendered.replace(&enc_token, &percent_encode_component(&rep));
+                }
                 let token = format!("{{{{{k}}}}}");
                 if rendered.contains(&token) {
-                    let rep = match v {
-                        Value::String(vs) => vs.clone(),
-                        Value::Null => String::new(),
-                        other => other.to_string(),
-                    };
                     rendered = rendered.replace(&token, &rep);
                 }
             }
@@ -1892,11 +2123,45 @@ pub async fn execute_routine(
     }
 
     let mut vars = Map::new();
+    let mut active_tab = tab_id;
+    let mut observed_domain = String::new();
+
+    // Pre-populate automatic {{url.*}} variables from the active tab when needed by defaults or step templates.
+    let needs_url_vars = routine
+        .params
+        .values()
+        .any(|p| p.default.as_ref().is_some_and(|d| d.to_string().contains("{{url.")))
+        || routine
+            .steps
+            .iter()
+            .any(|s| s.params.to_string().contains("{{url."));
+    if needs_url_vars {
+        let mut info_p = Map::new();
+        if let Some(tid) = active_tab {
+            info_p.insert("tabId".into(), json!(tid));
+        }
+        if let Ok((info, _)) = client
+            .send("page.info", Value::Object(info_p), browser, Duration::from_secs(10))
+            .await
+        {
+            if active_tab.is_none() {
+                active_tab = info.get("tabId").and_then(Value::as_i64);
+            }
+            if let Some(u) = info.get("url").and_then(Value::as_str) {
+                observed_domain = canonical_site_key(u).unwrap_or_default();
+                for (uk, uv) in extract_url_template_vars(u) {
+                    vars.insert(uk, uv);
+                }
+            }
+        }
+    }
+
     for (name, spec) in &routine.params {
         if let Some(val) = arguments.get(name) {
             vars.insert(name.clone(), val.clone());
         } else if let Some(def) = &spec.default {
-            vars.insert(name.clone(), def.clone());
+            let resolved_def = interpolate_value(def, &vars);
+            vars.insert(name.clone(), resolved_def);
         } else if spec.required {
             return Err(format!("Missing required routine argument '{name}'. [bad_request]"));
         }
@@ -1908,7 +2173,6 @@ pub async fn execute_routine(
     let started = Instant::now();
     let mut outputs = Map::new();
     let mut step_log = Vec::with_capacity(routine.steps.len());
-    let mut active_tab = tab_id;
 
     for (idx, step) in routine.steps.iter().enumerate() {
         let method = canonical_step_method(&step.op)?;
@@ -1917,6 +2181,20 @@ pub async fn execute_routine(
                 "Step {} ({method}) is not allowed in read-only mode. [read_only]",
                 idx + 1
             ));
+        }
+        if enforce_read_only && method == "page.fetch" {
+            let http_m = step
+                .params
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("GET")
+                .to_ascii_uppercase();
+            if http_m != "GET" && http_m != "HEAD" {
+                return Err(format!(
+                    "Step {} (page.fetch {http_m}) is not allowed in read-only mode. [read_only]",
+                    idx + 1
+                ));
+            }
         }
 
         // Skip optional empty text entry (e.g. insert_shape when label == "")
@@ -1933,6 +2211,15 @@ pub async fn execute_routine(
         }
 
         let mut p_val = interpolate_value(&step.params, &vars);
+        let mut strip_html = false;
+        if method == "page.fetch" {
+            if let Some(obj) = p_val.as_object_mut() {
+                strip_html = obj
+                    .remove("stripHtml")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            }
+        }
         if (step.op == "doubleClick" || step.op == "dblclick") && p_val.is_object() {
             if let Some(obj) = p_val.as_object_mut() {
                 obj.insert("doubleClick".into(), json!(true));
@@ -1949,15 +2236,36 @@ pub async fn execute_routine(
 
         let step_start = Instant::now();
         match client
-            .send(method, p_val, browser, Duration::from_secs(45))
+            .send(method, p_val, browser, Duration::from_secs(60))
             .await
         {
             Ok((res, _)) => {
                 if active_tab.is_none() {
                     active_tab = res.get("tabId").and_then(Value::as_i64);
                 }
+                if observed_domain.is_empty() {
+                    if let Some(u) = res.get("url").and_then(Value::as_str) {
+                        observed_domain = canonical_site_key(u).unwrap_or_default();
+                    }
+                }
                 if let Some(out_key) = &step.save_as {
-                    let extracted = if let Some(v) = res.get("value") {
+                    let extracted = if method == "page.fetch" {
+                        if let Some(b64) = res.get("data").and_then(Value::as_str) {
+                            match crate::decode_base64(b64) {
+                                Ok(bytes) => {
+                                    let decoded_str = String::from_utf8_lossy(&bytes).to_string();
+                                    Value::String(if strip_html {
+                                        strip_html_to_text(&decoded_str)
+                                    } else {
+                                        decoded_str
+                                    })
+                                }
+                                Err(_) => res.clone(),
+                            }
+                        } else {
+                            res.clone()
+                        }
+                    } else if let Some(v) = res.get("value") {
                         v.clone()
                     } else if let Some(t) = res.get("text") {
                         t.clone()
@@ -1984,15 +2292,23 @@ pub async fn execute_routine(
                 }));
             }
             Err(err) => {
+                let err_str = err.to_string();
+                if !observed_domain.is_empty() {
+                    record_routine_outcome_on_disk(&observed_domain, &routine.name, false, Some(&err_str));
+                }
                 return Err(format!(
                     "Routine '{}' failed at step {} ({}): {}",
                     routine.name,
                     idx + 1,
                     step.op,
-                    err
+                    err_str
                 ));
             }
         }
+    }
+
+    if !observed_domain.is_empty() {
+        record_routine_outcome_on_disk(&observed_domain, &routine.name, true, None);
     }
 
     Ok(json!({
@@ -2029,11 +2345,96 @@ mod tests {
         vars.insert("count".into(), json!(3));
         let tpl = json!({
             "exact": "{{count}}",
-            "inline": "Node: {{shape}} #{{count}}"
+            "inline": "Node: {{shape}} #{{count}}",
+            "url": "https://github.com/search?q={{q:urlencode}}"
         });
+        vars.insert("q".into(), json!("rust async & c#"));
         let out = interpolate_value(&tpl, &vars);
         assert_eq!(out["exact"], json!(3));
         assert_eq!(out["inline"], json!("Node: Cylinder #3"));
+        assert_eq!(out["url"], json!("https://github.com/search?q=rust%20async%20%26%20c%23"));
+    }
+
+    #[test]
+    fn resolves_all_top_10_popular_site_playbooks() {
+        let targets = [
+            ("https://www.google.com/", "google.com", "search"),
+            ("https://docs.google.com/document/d/195j9eDD3/edit", "docs.google.com/document", "read_document"),
+            ("https://docs.google.com/spreadsheets/d/1BxiMVs0/edit#gid=42", "docs.google.com/spreadsheets", "read_sheet_csv"),
+            ("https://sheets.google.com/", "docs.google.com/spreadsheets", "write_cell"),
+            ("https://chatgpt.com/", "chatgpt.com", "draft_prompt"),
+            ("https://chat.openai.com/", "chatgpt.com", "ask_and_wait"),
+            ("https://www.youtube.com/watch?v=123", "youtube.com", "search_videos"),
+            ("https://github.com/torvalds/linux", "github.com", "search_repo_issues"),
+            ("https://en.wikipedia.org/wiki/Rust", "wikipedia.org", "search_article"),
+            ("https://www.reddit.com/r/rust/", "reddit.com", "search_reddit"),
+            ("https://x.com/explore", "x.com", "search_posts"),
+            ("https://stackoverflow.com/questions/1", "stackoverflow.com", "read_qa"),
+            ("https://www.amazon.com/", "amazon.com", "search_products"),
+            ("https://news.ycombinator.com/", "news.ycombinator.com", "read_front_page"),
+            ("https://finance.yahoo.com/quote/MSFT/", "finance.yahoo.com", "lookup_quote"),
+        ];
+        for (url, expected_domain, expected_routine) in targets {
+            let pb = resolve_playbook(url).unwrap_or_else(|| panic!("missing playbook for {url}"));
+            assert_eq!(pb.domain, expected_domain);
+            assert_eq!(pb.schema_version, 2);
+            assert!(
+                pb.verified_at.as_deref().and_then(iso8601_to_epoch).is_some(),
+                "missing valid ISO-8601 verifiedAt on {expected_domain}"
+            );
+            assert!(
+                pb.routines.contains_key(expected_routine),
+                "missing routine {expected_routine} on {expected_domain}"
+            );
+            for step in pb.routines[expected_routine].steps.iter() {
+                canonical_step_method(&step.op).expect("valid step op");
+            }
+        }
+        // Unscoped docs.google.com/presentation has no built-in Google Search or Google Docs playbook!
+        assert!(builtin_playbook_for("docs.google.com").is_none());
+        assert_eq!(
+            domain_candidates("https://docs.google.com/presentation/d/1/edit"),
+            vec!["docs.google.com".to_string()]
+        );
+
+        // Verify ISO-8601 roundtrip and URL variable extraction
+        let epoch = 1_794_908_700;
+        let iso = epoch_to_iso8601(epoch);
+        assert_eq!(iso, "2026-11-17T09:45:00Z");
+        assert_eq!(iso8601_to_epoch(&iso), Some(epoch));
+
+        let uvars = extract_url_template_vars("https://docs.google.com/spreadsheets/d/1BxiMVs0XRA/edit?usp=sharing#gid=987");
+        assert_eq!(uvars["url.docId"], json!("1BxiMVs0XRA"));
+        assert_eq!(uvars["url.gid"], json!("987"));
+
+        let gh_vars = extract_url_template_vars("https://github.com/rust-lang/rust/issues/1");
+        assert_eq!(gh_vars["url.repo"], json!("rust-lang/rust"));
+
+        // Verify consecutive selector failures flag routine stale=true (website redesign detection) in isolated temp dir
+        let tmp_dir = std::env::temp_dir().join(format!("bb-routines-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        unsafe {
+            std::env::set_var("BROWSER_BRIDGE_ROUTINES_DIR", &tmp_dir);
+        }
+        record_routine_outcome_on_disk("https://chatgpt.com/", "draft_prompt", false, Some("Timed out [timeout]"));
+        assert!(!resolve_playbook("https://chatgpt.com/").unwrap().routines["draft_prompt"].stale);
+        record_routine_outcome_on_disk("https://chatgpt.com/", "draft_prompt", false, Some("Timed out [timeout]"));
+        let stale_pb = resolve_playbook("https://chatgpt.com/").unwrap();
+        assert!(stale_pb.routines["draft_prompt"].stale);
+        assert!(
+            stale_pb.routines["draft_prompt"]
+                .stale_reason
+                .as_deref()
+                .unwrap_or("")
+                .contains("redesigned")
+        );
+        // Recovery clears stale flag
+        record_routine_outcome_on_disk("https://chatgpt.com/", "draft_prompt", true, None);
+        assert!(!resolve_playbook("https://chatgpt.com/").unwrap().routines["draft_prompt"].stale);
+        unsafe {
+            std::env::remove_var("BROWSER_BRIDGE_ROUTINES_DIR");
+        }
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     #[test]

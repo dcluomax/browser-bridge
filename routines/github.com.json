@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 2,
+  "domain": "github.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Repository/Issue navigation 3,469 ms -> ~920 ms (3.8x faster via domcontentloaded); full README / PR / Issue extraction in ~50 ms without 200-link repo header truncation",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 120,
+    "preferredSnapshotFrames": "top",
+    "submitSettleMs": 120
+  },
+  "notes": [
+    "GitHub uses Turbo Drive SPA page transitions; Browser Bridge uses domcontentloaded + 120 ms hydration and compacts 200+ repo chrome links so <main> content is never truncated.",
+    "Use \"read_main_content\" (~50 ms) for lossless README/PR/Issue reading, \"search_repo_issues\" to filter issues/PRs in the active repo, or \"go_to_file\" to jump to code."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_main_content": {
+      "name": "read_main_content",
+      "description": "Extracts clean README markdown, PR diff/discussion, issue thread, or source file text from <main> in ~50 ms.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "article.markdown-body, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "content",
+          "optional": false
+        }
+      ]
+    },
+    "search_github": {
+      "name": "search_github",
+      "description": "Runs a global GitHub search (repositories, code, issues, pullrequests, commits) with domcontentloaded and snapshots <main> results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": {
+          "type": "string",
+          "description": "GitHub search query.",
+          "required": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Search scope: repositories, code, issues, pullrequests, commits.",
+          "required": false,
+          "default": "repositories"
+        }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://github.com/search?q={{query:urlencode}}&type={{type:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "timeoutSeconds": 6,
+            "state": "visible",
+            "locator": {
+              "steps": [{ "kind": "role", "value": "main" }]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "search_repo_issues": {
+      "name": "search_repo_issues",
+      "description": "Searches issues and pull requests inside the current GitHub repository ({{url.repo}}) and returns clean <main> results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": {
+          "type": "string",
+          "description": "Issue/PR filter query, e.g. 'is:open label:bug' or 'memory leak'.",
+          "required": false,
+          "default": "is:issue is:open"
+        }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://github.com/{{url.repo}}/issues?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 30000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "issues",
+          "optional": false
+        }
+      ]
+    },
+    "go_to_file": {
+      "name": "go_to_file",
+      "description": "Filters repository files via GitHub's 'Go to file' combobox and snapshots matching file links.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "filename": {
+          "type": "string",
+          "description": "File name or path fragment inside the current repository.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{filename}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "combobox", "name": "Go to file" }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 12000 },
+          "saveAs": "matches",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

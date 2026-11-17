@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "domain": "finance.yahoo.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Ticker quote + valuation metrics lookup: 8,050 ms+ -> 702 ms (11.5x faster via domcontentloaded + top-frame + header menu compaction)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Yahoo Finance streams live quotes and 20+ ad iframes that hang window.onload; Browser Bridge uses domcontentloaded + snapshotFrames=top (~700 ms vs 8s-30s).",
+    "Use \"lookup_quote\" (e.g. ticker='MSFT') or \"read_quote_summary\" to read <main> quote price and valuation stats directly."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "lookup_quote": {
+      "name": "lookup_quote",
+      "description": "Jumps directly to finance.yahoo.com/quote/<ticker>/ with domcontentloaded and extracts <main> quote & key statistics.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "ticker": { "type": "string", "description": "Stock/ETF ticker symbol, e.g. MSFT, NVDA, AAPL.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://finance.yahoo.com/quote/{{ticker:urlencode}}/",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 25000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, #nimbus-app" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "quote",
+          "optional": false
+        }
+      ]
+    },
+    "read_quote_summary": {
+      "name": "read_quote_summary",
+      "description": "Extracts current quote price, chart summary, and valuation metrics from <main> without Yahoo header nav clutter.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 30000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, #nimbus-app" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "quote",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

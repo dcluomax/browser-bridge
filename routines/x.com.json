@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "domain": "x.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "SPA timeline navigation via domcontentloaded + 350 ms hydration + 80 ms submit settle; Cloudflare wall auto-detected for instant browser_handoff",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 350,
+    "submitSettleMs": 80,
+    "dynamicDom": true,
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "X (Twitter) virtualizes timeline tweets off-screen and re-renders DOM dynamically; prefer data-testid locators (article[data-testid='tweet'], tweetTextarea_0).",
+    "Routine \"draft_post\" fills the composer without clicking Post so the user can review before publishing."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_posts": {
+      "name": "search_posts",
+      "description": "Opens X search results for query and snapshots visible timeline posts.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Search query for X posts.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://x.com/search?q={{query:urlencode}}&src=typed_query",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "timeoutSeconds": 6,
+            "state": "visible",
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "article[data-testid='tweet'], main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "posts",
+          "optional": false
+        }
+      ]
+    },
+    "draft_post": {
+      "name": "draft_post",
+      "description": "Types draft text into X's rich [data-testid='tweetTextarea_0'] editor without clicking Post.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "text": { "type": "string", "description": "Draft post text (fills composer without submitting).", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{text}}",
+            "clear": false,
+            "locator": {
+              "steps": [{ "kind": "testId", "value": "tweetTextarea_0", "exact": true }]
+            }
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 2,
+  "domain": "docs.google.com/spreadsheets",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Full-sheet CSV read in ~325 ms via same-origin /gviz/tq (vs impossible canvas scraping); warm cell jump + read/write via #t-name-box + #t-formula-bar-input in ~180 ms (vs 8,077 ms unoptimized)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 200,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 60,
+    "submitSettleMs": 80,
+    "directHttpBlocked": true,
+    "directHttpStatus": 401
+  },
+  "notes": [
+    "Google Sheets (Google Excel) paints its grid onto <canvas>; never guess pixel coordinates for cells.",
+    "Run \"read_sheet_csv\" (~325 ms) to read the entire active worksheet tab as clean CSV via same-origin /gviz/tq?tqx=out:csv using your signed-in session.",
+    "Run \"read_cell\" or \"write_cell\" to jump deterministically to any coordinate or named range (e.g. 'E3', 'Sheet2!B4') via #t-name-box (\"Name box\") and read/edit #t-formula-bar-input (\"Formula bar\")."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_sheet_csv": {
+      "name": "read_sheet_csv",
+      "description": "Reads the entire Google Sheet tab as clean CSV in ~325 ms via same-origin /gviz/tq?tqx=out:csv&gid=<gid> using the signed-in browser session.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "gid": {
+          "type": "string",
+          "description": "Worksheet tab gid (defaults automatically to the current tab's #gid / ?gid, or '0').",
+          "required": false,
+          "default": "{{url.gid}}"
+        }
+      },
+      "steps": [
+        {
+          "op": "fetch",
+          "params": {
+            "url": "https://docs.google.com/spreadsheets/d/{{url.docId}}/gviz/tq?tqx=out:csv&gid={{gid:urlencode}}",
+            "method": "GET"
+          },
+          "saveAs": "csv",
+          "optional": false
+        }
+      ]
+    },
+    "read_cell": {
+      "name": "read_cell",
+      "description": "Jumps to an exact cell or range (e.g. 'E3' or 'B2:D10') via #t-name-box and reads its exact value or formula from #t-formula-bar-input into outputs.value.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "cell": {
+          "type": "string",
+          "description": "A1-notation cell or range, e.g. 'A1', 'E3', 'Summary!C12'.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "press",
+          "params": { "key": "Escape" },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{cell}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [{ "kind": "css", "value": "#t-name-box" }]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 20000,
+            "locator": {
+              "steps": [{ "kind": "css", "value": "#t-formula-bar-input" }]
+            }
+          },
+          "saveAs": "value",
+          "optional": false
+        }
+      ]
+    },
+    "write_cell": {
+      "name": "write_cell",
+      "description": "Selects an exact cell via #t-name-box, writes a value or formula (e.g. '=SUM(B2:B10)') into #t-formula-bar-input, and commits with Enter.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "cell": {
+          "type": "string",
+          "description": "Target A1 cell coordinate, e.g. 'C5'.",
+          "required": true
+        },
+        "value": {
+          "type": "string",
+          "description": "Cell text, number, or formula (e.g. '=SUM(A2:A20)').",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "press",
+          "params": { "key": "Escape" },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{cell}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [{ "kind": "css", "value": "#t-name-box" }]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#t-formula-bar-input .cell-input, #t-formula-bar-input" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{value}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#t-formula-bar-input .cell-input, #t-formula-bar-input [contenteditable='true']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "select_range": {
+      "name": "select_range",
+      "description": "Selects any cell range (e.g. 'A1:F25') via #t-name-box without pixel dragging.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "range": {
+          "type": "string",
+          "description": "A1 range notation, e.g. 'A1:D20'.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{range}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [{ "kind": "css", "value": "#t-name-box" }]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "rename_spreadsheet": {
+      "name": "rename_spreadsheet",
+      "description": "Renames the Google Sheet via input.docs-title-input.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "title": {
+          "type": "string",
+          "description": "New spreadsheet title.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{title}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input.docs-title-input" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

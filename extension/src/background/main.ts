@@ -11,7 +11,21 @@ import {
   syncContextMenuForTab,
 } from './context_menu.ts';
 import { NativeConnection } from './native.ts';
-import { tabUrl } from './page.ts';
+import {
+  cancelTabInteractions,
+  listActiveDemonstrations,
+  listActiveHandoffs,
+  resolveDemonstrationWait,
+  resolveHandoffWait,
+  startDemonstrationWait,
+  updateDemonstrationProgress,
+  type DemonstrationSummary,
+  type HandoffSummary,
+  type RecordedRoutineStep,
+} from './handoff.ts';
+import { dropTabNetworkCapture } from './network.ts';
+import { callFrame, tabUrl } from './page.ts';
+import { resolveLocale } from '../shared/i18n.ts';
 import { isShareableUrl } from '../popup/prompt.ts';
 import { getInstanceId, loadSettings, settings, updateSettings, type Settings } from './settings.ts';
 import { TabRegistry, type AccessMode } from './tabs.ts';
@@ -105,6 +119,8 @@ interface PopupState {
   settings: Settings;
   trustedInputSupported: boolean;
   sessions: Array<{ id: string; name: string }>;
+  handoffs: HandoffSummary[];
+  demonstrations: DemonstrationSummary[];
   currentTab: {
     id: number;
     title: string;
@@ -114,7 +130,7 @@ interface PopupState {
     access: string;
     scriptable: boolean;
   } | null;
-  tabs: Array<{ id: number; title: string; url: string; access: string; mode: AccessMode }>;
+  tabs: Array<{ id: number; title: string; url: string; access: string; mode: AccessMode; name?: string; group?: string; waitingHandoff?: boolean }>;
 }
 
 function isTabScriptable(tab: chrome.tabs.Tab): boolean {
@@ -137,6 +153,9 @@ async function popupState(): Promise<PopupState> {
       url: tab.url ?? '',
       access: owner,
       mode: registry.effectiveMode(grant.tabId),
+      ...(grant.name ? { name: grant.name } : {}),
+      ...(grant.groupTitle ? { group: grant.groupTitle } : {}),
+      waitingHandoff: listActiveHandoffs().some((h) => h.tabId === grant.tabId),
     });
   }
   return {
@@ -153,6 +172,8 @@ async function popupState(): Promise<PopupState> {
     settings: { ...settings() },
     trustedInputSupported: cdp.trustedInputSupported(),
     sessions: [...registry.sessions.values()].map((s) => ({ id: s.id, name: s.name })),
+    handoffs: listActiveHandoffs(),
+    demonstrations: listActiveDemonstrations(),
     currentTab: active?.id !== undefined
       ? {
           id: active.id,
@@ -168,11 +189,15 @@ async function popupState(): Promise<PopupState> {
   };
 }
 
+const popupRoutineNames = new Map<number, string>();
+
 async function handlePopup(message: {
   type: string;
   tabId?: number;
   share?: boolean;
   mode?: AccessMode;
+  action?: 'continue' | 'cancel' | 'finish';
+  routineName?: string;
   patch?: Partial<Settings>;
 }): Promise<unknown> {
   await ensureReady();
@@ -185,6 +210,8 @@ async function handlePopup(message: {
         const sharedTab = await api.tabs.get(message.tabId).catch(() => undefined);
         registry.grant(message.tabId, 'user', null, sharedTab?.url ?? sharedTab?.pendingUrl, message.mode ?? 'read');
       } else {
+        cancelTabInteractions(message.tabId);
+        dropTabNetworkCapture(message.tabId);
         registry.revoke(message.tabId);
         await cdp.detach(message.tabId);
       }
@@ -197,6 +224,66 @@ async function handlePopup(message: {
       registry.setMode(message.tabId, message.mode);
       syncContextMenuForTab(registry, message.tabId);
       return popupState();
+    case 'popup:handoffResolve': {
+      if (typeof message.tabId !== 'number') throw new Error('tabId required');
+      const act = message.action === 'cancel' ? 'cancel' : 'continue';
+      resolveHandoffWait({ tabId: message.tabId }, act);
+      const t = await api.tabs.get(message.tabId).catch(() => undefined);
+      if (t) await callFrame(t, 0, 'hideHandoffCard').catch(() => undefined);
+      await registry.applyBadge(message.tabId);
+      return popupState();
+    }
+    case 'popup:startDemo': {
+      if (typeof message.tabId !== 'number') throw new Error('tabId required');
+      const tab = await api.tabs.get(message.tabId).catch(() => undefined);
+      if (!tab) throw new Error('Tab not found');
+      const rName =
+        message.routineName?.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48) ||
+        `taught_flow_${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
+      popupRoutineNames.set(message.tabId, rName);
+      const loc = resolveLocale(settings().locale);
+      const finishLabel = loc.startsWith('zh') ? '完成并保存' : loc === 'ja' ? '完了して保存' : 'Finish & Save';
+      const cancelLabel = loc.startsWith('zh') ? '取消' : loc === 'ja' ? 'キャンセル' : 'Cancel';
+      const instruction = loc.startsWith('zh')
+        ? `正在录制流程 "${rName}"：在页面操作后点击「完成并保存」`
+        : `Recording routine "${rName}": act on the page, then click Finish & Save.`;
+      const { id, promise } = startDemonstrationWait(message.tabId, 'popup', tabUrl(tab), instruction, 300_000, true, () => {
+        void registry.applyBadge(message.tabId!);
+        registry.onChange();
+      });
+      await callFrame(tab, 0, 'startDemoRecorder', [{ id, instruction, finishLabel, cancelLabel }]);
+      void promise.then((outcome) => {
+        const savedName = popupRoutineNames.get(message.tabId!) ?? rName;
+        popupRoutineNames.delete(message.tabId!);
+        if (outcome.completed && outcome.steps.length > 0) {
+          native.post({
+            type: 'saveDemonstratedRoutine',
+            url: tabUrl(tab),
+            name: savedName,
+            description: `User-demonstrated workflow (${outcome.steps.length} step${outcome.steps.length === 1 ? '' : 's'}).`,
+            steps: outcome.steps,
+          });
+        }
+      });
+      return popupState();
+    }
+    case 'popup:finishDemo': {
+      if (typeof message.tabId !== 'number') throw new Error('tabId required');
+      const tab = await api.tabs.get(message.tabId).catch(() => undefined);
+      const stopped = tab
+        ? await callFrame<{ stopped: boolean; steps: RecordedRoutineStep[] }>(tab, 0, 'stopDemoRecorder').catch(() => ({
+            stopped: true,
+            steps: [] as RecordedRoutineStep[],
+          }))
+        : { stopped: true, steps: [] as RecordedRoutineStep[] };
+      resolveDemonstrationWait(
+        { tabId: message.tabId },
+        message.action === 'cancel' ? 'cancel' : 'finish',
+        stopped.steps,
+      );
+      await registry.applyBadge(message.tabId);
+      return popupState();
+    }
     case 'popup:activate':
       if (typeof message.tabId !== 'number') throw new Error('tabId required');
       {
@@ -235,7 +322,37 @@ async function handlePopup(message: {
 // ---------------------------------------------------------------------------------------------
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (sender.id !== api.runtime.id || typeof message?.type !== 'string' || !message.type.startsWith('popup:')) return false;
+  if (sender.id !== api.runtime.id || typeof message?.type !== 'string') return false;
+  if (message.type === 'content:handoff' && typeof sender.tab?.id === 'number') {
+    const act = message.action === 'cancel' ? 'cancel' : 'continue';
+    resolveHandoffWait({ tabId: sender.tab.id, id: typeof message.id === 'string' ? message.id : undefined }, act);
+    void registry.applyBadge(sender.tab.id);
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === 'content:demoProgress' && typeof sender.tab?.id === 'number') {
+    if (Array.isArray(message.steps)) {
+      updateDemonstrationProgress(
+        sender.tab.id,
+        typeof message.id === 'string' ? message.id : undefined,
+        message.steps as RecordedRoutineStep[],
+      );
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === 'content:demoFinish' && typeof sender.tab?.id === 'number') {
+    const act = message.action === 'cancel' ? 'cancel' : 'finish';
+    resolveDemonstrationWait(
+      { tabId: sender.tab.id, id: typeof message.id === 'string' ? message.id : undefined },
+      act,
+      Array.isArray(message.steps) ? (message.steps as RecordedRoutineStep[]) : undefined,
+    );
+    void registry.applyBadge(sender.tab.id);
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (!message.type.startsWith('popup:')) return false;
   handlePopup(message).then(
     (result) => sendResponse({ ok: true, result }),
     (error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }),
@@ -243,7 +360,41 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+api.tabs.onCreated.addListener((tab) => {
+  if (tab.id === undefined || tab.openerTabId === undefined) return;
+  const parentGrant = registry.grants.get(tab.openerTabId);
+  if (!parentGrant || !parentGrant.owner || !registry.sessions.has(parentGrant.owner)) return;
+  const childUrl = tabUrl(tab);
+  if (childUrl && childUrl !== 'about:blank') {
+    try {
+      registry.assertNavigationAllowed(parentGrant.owner, tab.openerTabId, childUrl);
+    } catch {
+      void api.tabs.remove(tab.id).catch(() => undefined);
+      return;
+    }
+  }
+  registry.grant(tab.id, 'agent', parentGrant.owner, childUrl || undefined, parentGrant.mode, {
+    groupTitle: parentGrant.groupTitle,
+    allowedOrigins: parentGrant.allowedOrigins,
+  });
+  void registry.groupAgentTab(tab, parentGrant.groupTitle);
+});
+
+api.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId !== 0 || !details.url || details.url === 'about:blank') return;
+  const grant = registry.grants.get(details.tabId);
+  if (!grant) return;
+  const owner = grant.owner && registry.sessions.has(grant.owner) ? grant.owner : '';
+  try {
+    registry.assertNavigationAllowed(owner, details.tabId, details.url);
+  } catch {
+    void api.tabs.update(details.tabId, { url: 'about:blank' }).catch(() => undefined);
+  }
+});
+
 api.tabs.onRemoved.addListener((tabId) => {
+  cancelTabInteractions(tabId);
+  dropTabNetworkCapture(tabId);
   registry.onTabRemoved(tabId);
   cdp.clearDismissed(tabId);
   void cdp.detach(tabId);
@@ -301,6 +452,11 @@ api.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'browser-bridge-keepalive') {
     native.ensureConnected();
     void ensureContextMenus();
+    void registry.sweepIdleAgentTabs(Date.now(), async (id) => {
+      cancelTabInteractions(id);
+      dropTabNetworkCapture(id);
+      await cdp.detach(id);
+    });
   }
 });
 

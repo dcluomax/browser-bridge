@@ -220,6 +220,31 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
                 let _ = ext_tx.send(reply);
             });
         }
+        Some("saveDemonstratedRoutine") => {
+            let url = msg.get("url").and_then(Value::as_str).unwrap_or("").to_string();
+            let name = msg.get("name").and_then(Value::as_str).unwrap_or("").trim().to_string();
+            let desc = msg.get("description").and_then(Value::as_str).unwrap_or("").to_string();
+            let raw_steps = msg.get("steps").cloned().unwrap_or(Value::Null);
+            if !url.is_empty() && !name.is_empty() {
+                if let Ok(steps) = serde_json::from_value::<Vec<bridge_core::routines::RoutineStep>>(raw_steps) {
+                    if !steps.is_empty() {
+                        let now_ts = bridge_core::routines::now_iso8601();
+                        let routine = RoutineDefinition {
+                            name,
+                            description: desc,
+                            read_only: false,
+                            verified_at: Some(now_ts.clone()),
+                            updated_at: Some(now_ts),
+                            params: std::collections::BTreeMap::new(),
+                            steps,
+                            ..Default::default()
+                        };
+                        let mut guard = state.lock().await;
+                        let _ = guard.learner.upsert_memory(&url, None, Some(routine), None, false);
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }

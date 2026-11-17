@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 2,
+  "domain": "news.ycombinator.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Flattens nested border=0 layout tables so all 30 front-page stories fit cleanly in 19.4 KB with zero snapshot truncation",
+  "accessProfile": {
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Hacker News uses nested border=0 layout tables; Browser Bridge flattens layout tables so all 30 front-page stories fit cleanly in one snapshot.",
+    "Use \"read_front_page\" to read stories or \"search_hn\" to search via HN Algolia."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_front_page": {
+      "name": "read_front_page",
+      "description": "Snapshots all 30 Hacker News stories with flattened layout tables.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "stories",
+          "optional": false
+        }
+      ]
+    },
+    "search_hn": {
+      "name": "search_hn",
+      "description": "Submits a query to Hacker News Algolia search and snapshots matching discussions.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Hacker News search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input[name='q']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "timeoutSeconds": 6,
+            "state": "visible",
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": ".Story, main, body" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

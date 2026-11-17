@@ -4,45 +4,45 @@
   <rect width="1240" height="356" rx="18" fill="#0f172a"/>
   <rect x="1" y="1" width="1238" height="354" rx="17" fill="none" stroke="#334155" stroke-width="1.5"/>
 
-  <text x="44" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">Self-Evolving Engine — SiteLearner, Fast Routines &amp; WebMCP</text>
-  <text x="1196" y="44" text-anchor="end" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5">Every error &amp; detour makes the next visit faster</text>
+  <text x="44" y="44" fill="#f8fafc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="21" font-weight="700">Self-Evolving Engine — Timestamped JSONs, SiteLearner &amp; WebMCP</text>
+  <text x="1196" y="44" text-anchor="end" fill="#94a3b8" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13.5">14 schema v2 playbooks · Auto-refresh · [STALE] drift guard</text>
 
   <g transform="translate(44, 74)">
     <rect width="356" height="246" rx="14" fill="#1e293b" stroke="#f59e0b" stroke-width="1.3"/>
     <text x="22" y="34" fill="#fde68a" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Visit 1 · Real-World Web Friction</text>
     <text x="22" y="66" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Stalled window.onload analytics beacons</text>
-    <text x="22" y="94" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• SPA hydration race (stale_ref / not_ready)</text>
-    <text x="22" y="122" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Covered button (&lt;div#cookie-wall&gt;)</text>
-    <text x="22" y="150" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Direct HTTP 403 WAF block on API URL</text>
-    <text x="22" y="178" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Complex canvas app (app.diagrams.net)</text>
+    <text x="22" y="94" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Canvas apps (Google Docs / Sheets / draw.io)</text>
+    <text x="22" y="122" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Covered buttons &amp; 200-link nav overflow</text>
+    <text x="22" y="150" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Direct HTTP 403 WAF &amp; streaming chats</text>
+    <text x="22" y="178" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">• Website DOM redesigns breaking selectors</text>
     <rect x="20" y="198" width="316" height="32" rx="7" fill="#0f172a" stroke="#475569"/>
-    <text x="178" y="219" text-anchor="middle" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">Error -&gt; Recovery -&gt; Retry Success</text>
+    <text x="178" y="219" text-anchor="middle" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">Errors &amp; Demos -&gt; Timestamped JSON</text>
   </g>
 
   <path d="M 404 197 L 436 197 M 430 191 L 436 197 L 430 203" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
 
   <g transform="translate(442, 74)">
     <rect width="356" height="246" rx="14" fill="#1e293b" stroke="#38bdf8" stroke-width="1.4"/>
-    <text x="22" y="34" fill="#7dd3fc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">SiteLearner · Local Domain Playbook</text>
-    <text x="22" y="66" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">preferredWaitUntil = "domcontentloaded"</text>
-    <text x="22" y="94" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">hydrationSettleMs  = 250</text>
-    <text x="22" y="122" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">learnedRecoveries  = [click #accept]</text>
-    <text x="22" y="150" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">directHttpBlocked  = true (status 403)</text>
-    <text x="22" y="178" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">routines = [read_diagram_xml, ...]</text>
+    <text x="22" y="34" fill="#7dd3fc" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">SiteLearner · Schema v2 Playbooks</text>
+    <text x="22" y="66" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">verifiedAt = "2026-11-17T09:45:00Z"</text>
+    <text x="22" y="94" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">preferredWaitUntil = "domcontentloaded"</text>
+    <text x="22" y="122" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">url.docId / url.gid / url.repo + fetch</text>
+    <text x="22" y="150" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">Upgrade merge &amp; &gt;=2 fail [STALE] tag</text>
+    <text x="22" y="178" fill="#cbd5e1" font-family="ui-monospace, Consolas, monospace" font-size="11.5">14 built-in sites + custom user flows</text>
     <rect x="20" y="198" width="316" height="32" rx="7" fill="#042f2e" stroke="#14b8a6"/>
-    <text x="178" y="219" text-anchor="middle" fill="#99f6e4" font-family="ui-monospace, Consolas, monospace" font-size="11.5">Saved locally in routines/&lt;domain&gt;.json</text>
+    <text x="178" y="219" text-anchor="middle" fill="#99f6e4" font-family="ui-monospace, Consolas, monospace" font-size="11.5">Synced locally in routines/*.json</text>
   </g>
 
   <path d="M 802 197 L 834 197 M 828 191 L 834 197 L 828 203" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
 
   <g transform="translate(840, 74)">
     <rect width="356" height="246" rx="14" fill="#1e293b" stroke="#10b981" stroke-width="1.4"/>
-    <text x="22" y="34" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Visit 2+ · Sub-Second Execution</text>
-    <text x="22" y="66" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Skips 4.5s stalled beacon wait</text>
-    <text x="22" y="94" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Injects [Site Memory] into snapshots</text>
-    <text x="22" y="122" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ 1-call browser_routine_run workflows</text>
-    <text x="22" y="150" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ smart_fetch routes 403 via live tab</text>
-    <text x="22" y="178" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Calls W3C document.modelContext tools</text>
+    <text x="22" y="34" fill="#6ee7b7" font-family="system-ui, sans-serif" font-size="15.5" font-weight="700">Visit 2+ · Measured 5x–31x Speedups</text>
+    <text x="22" y="66" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Google Sheets cell R/W: 259 ms (31x)</text>
+    <text x="22" y="94" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Google Search results: 1.29 s (12x)</text>
+    <text x="22" y="122" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ Google Docs Kix canvas: 10 ms snapshot</text>
+    <text x="22" y="150" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ GitHub README: ~50 ms · Yahoo: 11.5x</text>
+    <text x="22" y="178" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12.5">✓ ChatGPT deterministic stop-button wait</text>
     <rect x="20" y="198" width="316" height="32" rx="7" fill="#052e16" stroke="#16a34a"/>
     <text x="178" y="219" text-anchor="middle" fill="#bbf7d0" font-family="system-ui, sans-serif" font-size="12" font-weight="700">Zero extra LLM round-trips on repeat tasks</text>
   </g>

@@ -276,7 +276,11 @@ export function detectBotChallenge(probe: {
     markers.has('hcaptcha') ||
     markers.has('arkose') ||
     markers.has('datadome') ||
-    /Press & Hold to confirm you are a human|Please verify you are a human|Pardon Our Interruption/i.test(`${title}\n${text}`)
+    url.includes('/sorry/index') ||
+    url.includes('/errors/validateCaptcha') ||
+    /Press & Hold to confirm you are a human|Please verify you are a human|Pardon Our Interruption|Enter the characters you see below|unusual traffic from your computer network/i.test(
+      `${title}\n${text}`,
+    )
   ) {
     return {
       kind: 'captcha',
@@ -286,8 +290,10 @@ export function detectBotChallenge(probe: {
   }
 
   if (
-    (probe.status === 403 || probe.status === 429) &&
-    /^(?:Access Denied|403 Forbidden|429 Too Many Requests|Request Blocked|Error 1015|Error 1020)/i.test(`${title}\n${text.slice(0, 400)}`)
+    (probe.status === 403 || probe.status === 429 || /Blocked by network security|Whoa there, pardner/i.test(text)) &&
+    /^(?:Access Denied|403 Forbidden|429 Too Many Requests|Request Blocked|Error 1015|Error 1020)|Blocked by network security|Whoa there, pardner/i.test(
+      `${title}\n${text.slice(0, 500)}`,
+    )
   ) {
     return {
       kind: 'access_denied',

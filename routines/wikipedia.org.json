@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "domain": "wikipedia.org",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Article search + 35k-char clean #mw-content-text extraction in ~2,200 ms; #cite_note anchor compaction saves ~8 KB snapshot budget per article",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Wikipedia articles contain hundreds of sidebar TOC and citation links; Browser Bridge automatically compacts nav links and #cite_note hashes.",
+    "Use \"read_article\" for clean #mw-content-text extraction up to 60k chars or \"search_article\" to jump directly to a topic."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_article": {
+      "name": "search_article",
+      "description": "Submits a Wikipedia search query and extracts the resulting #mw-content-text article prose.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Article title or search phrase.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "searchbox", "name": "Search Wikipedia" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 35000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#mw-content-text, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "article",
+          "optional": false
+        }
+      ]
+    },
+    "read_article": {
+      "name": "read_article",
+      "description": "Extracts clean Wikipedia article text from #mw-content-text without left/right navigation sidebars.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#mw-content-text, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "article",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

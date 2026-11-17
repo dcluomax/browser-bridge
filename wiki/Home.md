@@ -12,7 +12,7 @@ Welcome to the official **Browser Bridge Wiki**!
 
 | Section | Pages |
 | --- | --- |
-| **Start Here** | [[Getting Started]] · [[Browser Extension Guide]] · [[MCP Client Setup]] |
+| **Start Here** | [[Getting Started]] · [[Upgrade Notes]] · [[Browser Extension Guide]] · [[MCP Client Setup]] |
 | **Tools, Routines & SDK** | [[MCP Tools Reference]] · [[Site Memory and WebMCP]] · [[Python SDK and Local IPC]] |
 | **Architecture & Security** | [[Architecture Deep Dive]] · [[Security and Privacy Model]] |
 | **Operations & Development** | [[CLI and Troubleshooting]] · [[Contributing and Development]] |
@@ -30,4 +30,4 @@ Welcome to the official **Browser Bridge Wiki**!
 1. **100% LOCAL — Your Real Browser & SSO:** Zero cloud relays, zero remote containers, and zero browser driver downloads. Sign in once in your normal browser and share only the specific tab you want an agent to read or assist with.
 2. **ZERO-PORT SECURE — OS Isolation & 3-Layer ACLs:** Communication uses OS-enforced `CurrentUserOnly` Windows Named Pipes (`\\.\pipe\browser-bridge.<SID>.*`) and `0700`/`0600` Unix Domain Sockets — never localhost HTTP or WebSocket ports — backed by `--read-only`, Global Read-Only Lock, per-tab `Read-Only`/`Read-Write` grants, and automatic credential redaction.
 3. **NATIVE FAST — ~1.5 MB Rust Binary & ~1.1 ms IPC:** Standalone native Rust host (~8 MB RAM) paired with a zero-dependency Python SDK over direct OS pipes (`~1.1 ms` median RTT), 1-RTT lazy DOM snapshots, and background focus-free screenshots.
-4. **SELF-EVOLVING — `SiteLearner`, Routines & WebMCP:** Automatically turns first-visit timeouts, SPA hydration races, overlay blockers, and `403` WAF blocks into sub-second domain playbooks, reusable 1-call routines, and W3C `document.modelContext` WebMCP tool calls.
+4. **SELF-EVOLVING — 14 Timestamped `routines/*.json` Playbooks, `SiteLearner`, Teach Recorder & WebMCP:** Ships 14 `schemaVersion: 2` timestamped site optimization JSONs delivering **5×–31× measured speedups** (Google Sheets **31×**, Google Search **12×**, Yahoo Finance **11.5×**, Amazon **6.4×**, Google Docs **5.4× + `10 ms` Kix `<canvas>` snapshots**, GitHub **`~50 ms` README reads**, ChatGPT deterministic `stop-button` streaming waits) with upgrade auto-merge and `[STALE]` website-redesign drift detection — see [[Upgrade Notes]] and [[Site Memory and WebMCP]].

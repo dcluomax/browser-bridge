@@ -33,6 +33,10 @@ Any mutation (`click`, `drag`, `type`, `fill`, `select`, `check`, `press`, `uplo
 2. **Layer 2 — Profile Popup Gate:** **Global Read-Only Lock** switch in the Browser Bridge popup.
 3. **Layer 3 — Per-Tab Grant Mode:** Individual tab mode (`read` vs `write`). New popup shares default cleanly to explicit mode selection and can be toggled between `Read-Only` and `Read-Write` in real time.
 
+### Session & Per-Tab Origin Fencing (`browser_allowlist` / `allowedOrigins`)
+
+Agents can additionally fence their session or individual tabs to an explicit allowlist of origins, bare hosts, or `*.domain.com` subdomain wildcards (`browser_allowlist` or `browser_tabs(action="new", allowedOrigins=[...])`). Cross-origin navigations, HTTP redirects, and child popups outside `allowedOrigins` are blocked immediately at the extension `webNavigation` boundary without prefix-spoofing vulnerabilities.
+
 ---
 
 ## 4. Credential, Cookie & Header Protection
@@ -57,4 +61,4 @@ Standard automation (`snapshot`, `locate`, `click`, `type`, `fill_form`, `screen
 ## 6. Human-in-the-Loop & Non-Goals
 
 - **No Anti-Bot / No Stealth Evasion:** Browser Bridge is **not** a scraping-evasion, fingerprint-spoofing, or CAPTCHA-solving tool. Chromium displays its standard *"Browser Bridge started debugging this browser"* banner whenever `chrome.debugger` trusted input is attached; dismissing that banner turns Trusted Input off cleanly.
-- **Human Handoff for Authentication & Consequential Actions:** Built-in MCP instructions (`INSTRUCTIONS` and `docs/AGENT.md`) direct agents to stop and hand logins, MFA/2FA prompts, and CAPTCHAs back to the user, and to confirm before submitting orders, sending messages, deleting data, or modifying account settings.
+- **Human Handoff for Authentication & Consequential Actions (`browser_handoff` & `browser_demonstrate`):** Built-in MCP instructions (`INSTRUCTIONS` and `docs/AGENT.md`) direct agents to call `browser_handoff` whenever logins, MFA/2FA prompts, Cloudflare/CAPTCHA walls (auto-detected with `suggestHandoff: true`), or payments appear. `browser_handoff` renders a tamper-proof closed-ShadowRoot Continue card (`WAIT` badge) and pauses until the user clicks **Continue**. When recording workflows via `browser_demonstrate` (or Popup **Teach Routine**), password and OTP fields are strictly ignored and never stored.

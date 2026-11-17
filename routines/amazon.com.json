@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 2,
+  "domain": "amazon.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Soft-gate bypass + product search: 16,043 ms -> 2,491 ms (6.4x faster via domcontentloaded + top-frame ad-iframe skip)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "Amazon loads dozens of background ad iframes; Browser Bridge uses waitUntil=domcontentloaded and snapshotFrames=top.",
+    "Routine \"search_products\" automatically clears Amazon's soft 'Continue shopping' gate if shown and searches #twotabsearchtextbox."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_products": {
+      "name": "search_products",
+      "description": "Clears optional 'Continue shopping' prompt, submits a search in #twotabsearchtextbox, and snapshots product results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Product search keywords.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 600,
+            "locator": {
+              "steps": [
+                { "kind": "text", "value": "Continue shopping" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#twotabsearchtextbox, input[name='field-keywords']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "products",
+          "optional": false
+        }
+      ]
+    },
+    "read_product_details": {
+      "name": "read_product_details",
+      "description": "Reads product title, pricing, feature bullets, and specifications from #ppd / #centerCol.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 45000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#ppd, #centerCol, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "details",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

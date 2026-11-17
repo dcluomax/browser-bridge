@@ -25,44 +25,28 @@ interface TabCapture {
   order: string[];
 }
 
-const captures = new Map<number, TabCapture>();
-let listenersInstalled = false;
-
-interface RawWebRequestBody {
+interface RawRequestBody {
   formData?: Record<string, string[]>;
   raw?: Array<{ bytes?: ArrayBuffer }>;
 }
 
-interface RawBeforeRequestDetails {
-  tabId: number;
+interface RawWebRequestDetails {
   requestId: string;
-  method?: string;
-  url: string;
-  type: string;
-  requestBody?: RawWebRequestBody;
-}
-
-interface RawHeadersDetails {
   tabId: number;
-  requestId: string;
   method?: string;
   url: string;
   type: string;
   statusCode?: number;
+  error?: string;
+  requestBody?: RawRequestBody;
   requestHeaders?: Array<{ name: string; value?: string }>;
   responseHeaders?: Array<{ name: string; value?: string }>;
 }
 
-interface RawErrorDetails {
-  tabId: number;
-  requestId: string;
-  method?: string;
-  url: string;
-  type: string;
-  error: string;
-}
+const captures = new Map<number, TabCapture>();
+let listenersInstalled = false;
 
-function decodeRequestBody(body: RawWebRequestBody | undefined): string | undefined {
+function decodeRequestBody(body: RawRequestBody | undefined): string | undefined {
   if (!body) return undefined;
   if (body.formData) {
     const params = new URLSearchParams();
@@ -120,7 +104,7 @@ function installListenersOnce(): void {
 
   try {
     wr.onBeforeRequest?.addListener(
-      (details: RawBeforeRequestDetails) => {
+      (details: RawWebRequestDetails) => {
         const cap = captures.get(details.tabId);
         if (!cap?.active) return undefined;
         const entry = ensureEntry(cap, details);
@@ -135,7 +119,7 @@ function installListenersOnce(): void {
     );
   } catch {
     wr.onBeforeRequest?.addListener(
-      (details: RawBeforeRequestDetails) => {
+      (details: RawWebRequestDetails) => {
         const cap = captures.get(details.tabId);
         if (!cap?.active) return undefined;
         ensureEntry(cap, details);
@@ -148,7 +132,7 @@ function installListenersOnce(): void {
   const reqHeaderOpts = isChromium ? ['requestHeaders', 'extraHeaders'] : ['requestHeaders'];
   try {
     wr.onSendHeaders?.addListener(
-      (details: RawHeadersDetails) => {
+      (details: RawWebRequestDetails) => {
         const cap = captures.get(details.tabId);
         if (!cap?.active) return;
         const entry = ensureEntry(cap, details);
@@ -162,7 +146,7 @@ function installListenersOnce(): void {
   } catch {
     try {
       wr.onSendHeaders?.addListener(
-        (details: RawHeadersDetails) => {
+        (details: RawWebRequestDetails) => {
           const cap = captures.get(details.tabId);
           if (!cap?.active) return;
           const entry = ensureEntry(cap, details);
@@ -179,7 +163,7 @@ function installListenersOnce(): void {
   }
 
   const respHeaderOpts = isChromium ? ['responseHeaders', 'extraHeaders'] : ['responseHeaders'];
-  const onResp = (details: RawHeadersDetails) => {
+  const onResp = (details: RawWebRequestDetails) => {
     const cap = captures.get(details.tabId);
     if (!cap?.active) return undefined;
     const entry = ensureEntry(cap, details);
@@ -204,7 +188,7 @@ function installListenersOnce(): void {
     }
   }
 
-  wr.onErrorOccurred?.addListener((details: RawErrorDetails) => {
+  wr.onErrorOccurred?.addListener((details: RawWebRequestDetails) => {
     const cap = captures.get(details.tabId);
     if (!cap?.active) return;
     const entry = ensureEntry(cap, details);

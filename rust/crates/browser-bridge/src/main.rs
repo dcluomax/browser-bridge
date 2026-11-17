@@ -84,7 +84,16 @@ fn routines_cmd(args: &[String]) -> i32 {
         if as_json {
             println!("{}", serde_json::to_string_pretty(&pb).unwrap_or_default());
         } else {
-            println!("Site Memory for {}:", pb.domain);
+            println!(
+                "Site Memory for {} (schema v{}, verifiedAt={}, updatedAt={}):",
+                pb.domain,
+                pb.schema_version,
+                pb.verified_at.as_deref().unwrap_or("unverified"),
+                if pb.updated_at.is_empty() { "-" } else { pb.updated_at.as_str() }
+            );
+            if let Some(speed) = &pb.speedup_summary {
+                println!("  Speedup: {speed}");
+            }
             let perf_lines = pb.access_profile.summary_lines();
             if !perf_lines.is_empty() {
                 println!("  Learned Access & Perf Profile:");
@@ -105,7 +114,9 @@ fn routines_cmd(args: &[String]) -> i32 {
             );
             println!("  Routines ({}):", pb.routines.len());
             for r in pb.routines.values() {
-                println!("    - {}: {}", r.name, r.description);
+                let stale = if r.stale { " [STALE - DOM may have changed]" } else { "" };
+                let v = r.verified_at.as_deref().map(|t| format!(" (verified {t})")).unwrap_or_default();
+                println!("    - {}{stale}{v}: {}", r.name, r.description);
             }
             println!("  Notes ({}):", pb.notes.len());
             for n in &pb.notes {
@@ -125,8 +136,9 @@ fn routines_cmd(args: &[String]) -> i32 {
     } else {
         println!("Site Memory directory: {}", bridge_core::routines::routines_directory().display());
         for pb in all {
+            let v = pb.verified_at.as_deref().unwrap_or("-");
             println!(
-                "  {:<22} {} routine(s), {} note(s), {} pitfall(s)",
+                "  {:<30} {} routine(s), {} note(s), {} pitfall(s)  [verifiedAt: {v}]",
                 pb.domain,
                 pb.routines.len(),
                 pb.notes.len(),

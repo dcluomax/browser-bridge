@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 2,
+  "domain": "youtube.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Video search + results snapshot in ~2,040 ms via domcontentloaded + 250 ms Polymer hydration (avoids 8s-30s streaming onload stall)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 250,
+    "preferredSnapshotFrames": "top"
+  },
+  "notes": [
+    "YouTube keeps streaming connections open; Browser Bridge defaults to waitUntil=domcontentloaded + 250 ms Polymer hydration.",
+    "Use routine \"search_videos\" for instant URL-based search or \"open_transcript\" on a watch page to extract full video transcripts."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_videos": {
+      "name": "search_videos",
+      "description": "Navigates directly to YouTube search results with domcontentloaded and snapshots matching videos.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Video search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.youtube.com/results?search_query={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "timeoutSeconds": 6,
+            "state": "visible",
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "ytd-video-renderer, ytd-rich-item-renderer, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 16000 },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "open_transcript": {
+      "name": "open_transcript",
+      "description": "Expands the video description, opens the YouTube transcript panel, and returns full transcript text.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 1200,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "tp-yt-paper-button#expand, ytd-text-inline-expander #expand" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "button", "name": "Show transcript" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 50000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "ytd-transcript-renderer, #segments-container" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "transcript",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

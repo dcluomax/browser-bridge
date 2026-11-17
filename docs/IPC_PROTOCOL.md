@@ -54,12 +54,12 @@ The host responds with `bridgeHello`:
 {
   "type": "bridgeHello",
   "protocol": 1,
-  "hostVersion": "0.7.0",
+  "hostVersion": "0.10.0",
   "session": "s-1",
   "browser": {
     "browser": "edge",
     "browserVersion": "136.0",
-    "extensionVersion": "0.7.0",
+    "extensionVersion": "0.10.0",
     "instanceId": "a1b2c3d4e5f6",
     "label": "Work"
   }
@@ -110,6 +110,7 @@ Host-handled methods available in `rpc` mode in addition to all extension `tabs.
 | `not_installed` | Native host binary or registration was not found |
 | `unavailable` | No matching browser profile is currently connected |
 | `forbidden` | Target tab is neither user-shared nor owned by this session, or is leased by another session |
+| `origin_blocked` | Navigation, redirect, or popup target is outside the active `allowedOrigins` fence (`session.allowlist`) |
 | `read_only` | Mutating command blocked by `--read-only`, Global Read-Only Lock, or `[read-only]` tab mode |
 | `disabled` | Optional capability (such as `page.evaluate`) is disabled in popup settings |
 | `restricted` | Browser-internal URL (`edge://`, `chrome://`, extension store) cannot be scripted |

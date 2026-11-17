@@ -1,15 +1,16 @@
 # MCP Tools Reference
 
-Browser Bridge exposes **26 MCP tools** (plus optional `browser_evaluate`), **4 `bridge://` MCP resources**, and **2 MCP workflow prompts**. Stateful `tools/call` turns are processed through a sequential FIFO worker so batched tool calls (for example `[browser_click, browser_snapshot]`) never race out of order.
+Browser Bridge `v0.10.0` exposes **31 MCP tools** (plus optional dual-gated `browser_evaluate`), **4 `bridge://` MCP resources**, and **2 MCP workflow prompts**. Stateful `tools/call` turns are processed through a sequential FIFO worker so batched tool calls (for example `[browser_click, browser_snapshot]`) never race out of order.
 
 ---
 
-## 1. Discovery & Tab Lifecycle
+## 1. Discovery, Background Tab Groups & Allowlists
 
 | Tool | Read-Safe? | Key Parameters | Purpose |
 | --- | --- | --- | --- |
 | `browser_status` | Yes | `browser?` (`edge`, `chrome`, `firefox`, profile label, or `instanceId`) | Lists connected browsers, capabilities, and optionally selects the target profile for the session |
-| `browser_tabs` | `list` only | `action` (`list` \| `new` \| `select` \| `close`), `tabId?`, `url?`, `name?`, `group?` | Lists accessible tabs, opens background named/grouped tabs, switches active tab, or closes owned tabs |
+| `browser_tabs` | `list` only | `action` (`list` \| `new` \| `select` \| `close`), `tabId?`, `url?`, `active?` (`false` default), `name?`, `group?`, `allowedOrigins?` | Lists accessible tabs, opens silent background tabs in a collapsed `[Agent]` group, reuses persistent named tabs, switches active tab, or closes owned tabs/groups |
+| `browser_allowlist` | Inspect only | `origins?` (`['https://docs.google.com', '*.github.com']`), `clear?`, `tabId?` | Inspects, sets, or clears the session or per-tab `allowedOrigins` domain fence |
 
 ---
 
@@ -30,6 +31,8 @@ Browser Bridge exposes **26 MCP tools** (plus optional `browser_evaluate`), **4 
 | `browser_get_text` | Yes | `tabId?`, `root?`, `maxChars?` | Returns visible document text with minimal token overhead |
 | `browser_locate` | Yes | `locator` (`steps`, `frameId?`), `maxResults?`, `tabId?` | Evaluates chained locators (`role`, `text`, `label`, `placeholder`, `testId`, `alt`, `title`, `css`, `nth`, `first`, `last`, `hasText`) and returns exact `count` + refs |
 | `browser_get_element` | Yes | `ref` or `locator`, `operation` (`text` \| `innerText` \| `value` \| `attribute` \| `state` \| `box`), `name?` | Reads typed scalar element properties while keeping password inputs masked |
+| `browser_network` | Yes | `action` (`start` \| `status` \| `stop` \| `clear`), `onlyFailures?`, `urlInclude?`, `limit?` | Captures credential-redacted HTTP/XHR/fetch traffic (`Authorization`, `Cookie`, API keys, passwords, JWTs replaced with `[REDACTED]`) |
+| `browser_console` | Yes | `action` (`read` \| `clear`), `level?` (`all` \| `warn` \| `error`), `limit?`, `clear?` | Reads or clears page console logs and uncaught JS errors captured from `document_start` |
 
 ---
 
@@ -62,13 +65,15 @@ All interaction tools require `[read-write]` permission and accept either `ref` 
 
 ---
 
-## 6. Site Memory, WebMCP & Optional Eval
+## 6. Human Handoff, Demonstrate, Site Memory, WebMCP & Optional Eval
 
 | Tool | Read-Safe? | Key Parameters | Purpose |
 | --- | --- | --- | --- |
-| `browser_routine_list` | Yes | `tabId?`, `domain?`, `includeTrace?` | Lists domain routines, learned `SiteAccessProfile`, notes, and pitfalls |
-| `browser_routine_run` | If `readOnly: true` | `name`, `arguments?`, `tabId?`, `domain?` | Runs a multi-step parameterized routine in a single call |
-| `browser_routine_save` | No | `domain?`, `routine?`, `note?`, `deleteRoutine?`, `resetAccessProfile?` | Saves newly learned site routines or domain notes |
+| `browser_handoff` | No | `message`, `tabId?`, `bringToFront?`, `timeoutSeconds?` | Pops a closed-ShadowRoot Continue card (`WAIT` badge) for login/2FA/CAPTCHA/payment and resumes once user clicks Continue |
+| `browser_demonstrate` | No | `instruction?`, `saveAs?`, `description?`, `tabId?`, `timeoutSeconds?` | Records user clicks and non-sensitive inputs (never passwords/OTPs) directly into a reusable Site Memory Routine |
+| `browser_routine_list` | Yes | `tabId?`, `domain?`, `includeTrace?` | Lists timestamped `routines/*.json` routines (`verifiedAt`, `[STALE]` warnings), `SiteAccessProfile`, notes, and pitfalls |
+| `browser_routine_run` | If `readOnly: true` | `name`, `arguments?`, `tabId?`, `domain?` | Runs a multi-step routine (`op: "fetch"`, `{{param:urlencode}}`, `{{url.docId}}` / `{{url.gid}}` / `{{url.repo}}`) in 1 call |
+| `browser_routine_save` | No | `domain?`, `routine?`, `note?`, `deleteRoutine?`, `resetAccessProfile?` | Saves newly learned site routines (stamping fresh `verifiedAt` and clearing `[STALE]`) or domain notes |
 | `browser_webmcp_list` | Yes | `tabId?` | Lists page-provided `document.modelContext` and `<form toolname>` WebMCP tools |
 | `browser_webmcp_call` | If `readOnlyHint: true` | `name`, `arguments?`, `submit?`, `tabId?` | Invokes a page WebMCP tool with structured input |
 | `browser_evaluate` | No | `expression`, `tabId?` | Optional; requires `--allow-evaluate` **and** popup script permission |

@@ -388,6 +388,105 @@ class ManagedApiTests(unittest.TestCase):
         finally:
             self.page.save_routine(domain="127.0.0.1", reset_access_profile=True)
 
+    def test_080_bg_groups_allowlist_challenge_handoff_demo_network_console(self):
+        import threading
+
+        # 1. Background silent open (active=False default), collapsed [Agent] group, and persistent named tab reuse
+        self.page.bring_to_front()
+        named1 = self.browser.new_page(args.base + "/second.html", name="work-doc", group="Agent-Batch")
+        try:
+            tabs_map = {t["tabId"]: t for t in self.browser.call("tabs.list")["tabs"]}
+            self.assertFalse(tabs_map[named1.tab_id]["active"], "Agent tabs must open silently in background by default")
+            self.assertEqual(tabs_map[named1.tab_id].get("name"), "work-doc")
+            self.assertEqual(tabs_map[named1.tab_id].get("group"), "Agent-Batch")
+
+            # Re-requesting the same named tab reuses it without navigating away from /second.html
+            named2 = self.browser.new_page(args.base + "/playwright.html", name="work-doc")
+            self.assertEqual(named2.tab_id, named1.tab_id)
+            self.assertTrue(named2.url.endswith("/second.html"), named2.url)
+
+            # 2. Per-tab allowedOrigins fence blocks cross-host navigation
+            self.browser.allowlist(["127.0.0.1"], tab_id=named1.tab_id)
+            port = args.base.rsplit(":", 1)[-1]
+            with self.assertRaisesRegex(BridgeError, "allowedOrigins|origin_blocked"):
+                named1.goto(f"http://localhost:{port}/frame.html")
+            self.browser.allowlist(clear=True, tab_id=named1.tab_id)
+
+            # 3. Bot challenge detection on Cloudflare interstitial
+            cf_res = named1._call("page.navigate", {"url": args.base + "/cloudflare-challenge.html"})
+            self.assertEqual(cf_res.get("challenge", {}).get("kind"), "cloudflare")
+            self.assertTrue(cf_res.get("challenge", {}).get("suggestHandoff"))
+
+            # 4. Interactive Handoff (blocking WAIT state on session 1 + Continue resolution via concurrent session 2)
+            named1.goto(args.base + "/diag-probe.html")
+            handoff_out: dict = {}
+
+            def wait_handoff():
+                handoff_out["res"] = named1.handoff("Complete human check", bring_to_front=False, timeout=10_000)
+
+            t_ho = threading.Thread(target=wait_handoff)
+            t_ho.start()
+            with BrowserBridge() as helper:
+                deadline = time.monotonic() + 5.0
+                saw_wait = False
+                while time.monotonic() < deadline:
+                    active_hos = helper.call("page.handoff", {"action": "status"}).get("handoffs", [])
+                    if any(h.get("tabId") == named1.tab_id for h in active_hos):
+                        saw_wait = True
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(saw_wait, "Tab should enter WAIT state during handoff")
+                helper.call("page.handoff", {"action": "resolve", "tabId": named1.tab_id})
+            t_ho.join(timeout=5.0)
+            self.assertTrue(handoff_out.get("res", {}).get("completed"))
+
+            # 5. Redacted Network Capture + Console Error Capture + Demonstrate-to-Routine (password-masked)
+            named1.clear_console()
+            named1.start_network_capture(url_include="/binary")
+            named1._call("page.demonstrate", {"action": "start", "instruction": "Run probe flow", "bringToFront": False})
+
+            named1.locator("#secret-pw").fill("MySuperSecretPassword123!")
+            named1.locator("#fire-diag").click()
+            time.sleep(0.25)
+            res_demo = named1.finish_demonstration("finish")
+            self.assertTrue(res_demo.get("completed"), res_demo)
+            steps = res_demo.get("steps", [])
+            serialized_steps = repr(steps)
+            self.assertNotIn("MySuperSecretPassword123!", serialized_steps, "Password input must never be recorded!")
+            self.assertIn("click", serialized_steps)
+
+            named1.save_routine(
+                routine={
+                    "name": "taught_probe_flow",
+                    "description": "Demonstrated diagnostic flow",
+                    "readOnly": False,
+                    "params": {},
+                    "steps": steps,
+                }
+            )
+
+            exchanges = named1.stop_network_capture()
+            self.assertGreaterEqual(len(exchanges), 1)
+            ex = exchanges[-1]
+            self.assertIn("api_key=[REDACTED]", ex["url"])
+            self.assertNotIn("sk-test-fixture-value-123", ex["url"])
+            if ex.get("requestHeaders"):
+                self.assertEqual(ex["requestHeaders"].get("authorization"), "[REDACTED]")
+
+            errs = named1.console_messages(level="error")
+            self.assertTrue(any("[REDACTED]" in e["text"] and "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in e["text"] for e in errs), errs)
+
+            named1.goto(args.base + "/diag-probe.html")
+            named1.run_routine("taught_probe_flow")
+            self.assertEqual(named1.locator("#fire-diag").inner_text(), "Fired")
+        finally:
+            try:
+                named1.save_routine(delete_routine="taught_probe_flow")
+            except Exception:
+                pass
+            closed_grp = self.browser.call("tabs.close", {"group": "Agent-Batch"})
+            self.assertIn(named1.tab_id, closed_grp.get("closedTabs", []))
+
     def test_shared_inventory_capability_and_agent_private_boundary(self):
         self.assertEqual(self.browser.call("status")["sharedTabInventory"], 1)
         with BrowserBridge() as observer:

@@ -212,6 +212,104 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(resp.status, 200)
         self.assertEqual([c[0] for c in pb.calls], ["page.fetch"])
 
+    def test_010_new_page_allowlist_url_vars_urlencode_and_timestamped_routines(self):
+        import json
+        from pathlib import Path
+
+        self.browser.result = {"tabId": 88, "reused": True, "url": "https://docs.google.com/spreadsheets/d/sheet-abc-123/edit#gid=42"}
+        reused_page = self.browser.new_page(
+            "https://docs.google.com/spreadsheets/d/sheet-abc-123/edit#gid=42",
+            active=False,
+            name="finance-sheet",
+            group="Agent",
+            allowed_origins=["https://docs.google.com"],
+        )
+        self.assertEqual(reused_page.tab_id, 88)
+        self.assertEqual(self.browser.calls[-1][0], "tabs.new")
+        self.assertEqual(
+            self.browser.calls[-1][1],
+            {
+                "active": False,
+                "name": "finance-sheet",
+                "group": "Agent",
+                "allowedOrigins": ["https://docs.google.com"],
+            },
+        )
+        self.assertNotIn(88, self.browser._owned_pages, "Named persistent tabs must not be auto-closed on exit")
+
+        self.browser.allowlist(["*.github.com"], tab_id=88)
+        self.assertEqual(self.browser.calls[-1][0], "session.allowlist")
+        self.assertEqual(self.browser.calls[-1][1], {"origins": ["*.github.com"], "tabId": 88})
+
+        # Verify automatic {{url.docId}}, {{url.gid}}, {{param:urlencode}}, and op="fetch" (raw + stripHtml)
+        class RoutineMockBridge(RecordingBridge):
+            def call(self, method, params=None, *, timeout=None):
+                self.calls.append((method, params, timeout))
+                if method == "page.info":
+                    return {"url": "https://docs.google.com/spreadsheets/d/doc_999/edit#gid=7"}
+                if method == "page.fetch":
+                    url_s = params["url"]
+                    raw = b"<html><head><style>body{}</style></head><body><h1>Doc Title</h1><p>Hello &amp; world</p></body></html>" if "mobilebasic" in url_s else b"colA,colB\n1,2\n"
+                    return {
+                        "status": 200,
+                        "url": url_s,
+                        "headers": {"content-type": "text/csv"},
+                        "data": base64.b64encode(raw).decode(),
+                        "byteLength": len(raw),
+                    }
+                return super().call(method, params, timeout=timeout)
+
+        rb = RoutineMockBridge()
+        rpage = Page(rb, 88)
+        rpage.routines = lambda **_kw: {
+            "domain": "docs.google.com/spreadsheets",
+            "routines": {
+                "export_csv": {
+                    "name": "export_csv",
+                    "readOnly": True,
+                    "params": {"query": {"default": "select A, B"}},
+                    "steps": [
+                        {
+                            "op": "fetch",
+                            "params": {
+                                "url": "{{url.origin}}/spreadsheets/d/{{url.docId}}/gviz/tq?tqx=out:csv&gid={{url.gid}}&tq={{query:urlencode}}",
+                                "stripHtml": False,
+                            },
+                            "saveAs": "csv",
+                        },
+                        {
+                            "op": "fetch",
+                            "params": {
+                                "url": "{{url.origin}}/document/d/{{url.docId}}/mobilebasic",
+                                "stripHtml": True,
+                            },
+                            "saveAs": "docText",
+                        },
+                    ],
+                }
+            },
+        }
+        out = rpage.run_routine("export_csv")
+        self.assertEqual(out["outputs"]["csv"], "colA,colB\n1,2\n")
+        self.assertEqual(out["outputs"]["docText"], "Doc Title\n\nHello & world")
+        fetch_calls = [c for c in rb.calls if c[0] == "page.fetch"]
+        self.assertEqual(
+            fetch_calls[0][1]["url"],
+            "https://docs.google.com/spreadsheets/d/doc_999/gviz/tq?tqx=out:csv&gid=7&tq=select%20A%2C%20B",
+        )
+
+        # Verify all 14 repository routines/*.json files follow schemaVersion 2 with ISO-8601 timestamps
+        routines_dir = Path(__file__).resolve().parents[2] / "routines"
+        routine_files = sorted(routines_dir.glob("*.json"))
+        self.assertEqual(len(routine_files), 14)
+        for rf in routine_files:
+            doc = json.loads(rf.read_text(encoding="utf-8"))
+            self.assertEqual(doc.get("schemaVersion"), 2, rf.name)
+            self.assertTrue(doc.get("verifiedAt", "").endswith("Z"), rf.name)
+            self.assertTrue(doc.get("updatedAt", "").endswith("Z"), rf.name)
+            self.assertTrue(doc.get("speedupSummary"), rf.name)
+            self.assertGreaterEqual(len(doc.get("routines", {})), 2, rf.name)
+
 
 if __name__ == "__main__":
     unittest.main()

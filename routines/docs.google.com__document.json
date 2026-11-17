@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 2,
+  "domain": "docs.google.com/document",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Document open 8,218 ms -> 1,528 ms (5.4x faster); full multi-page Canvas doc read in ~170 ms via same-origin /mobilebasic & 15 ms in-DOM DOCS_modelChunk extraction (vs 0-text canvas dead-ends)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 200,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 80,
+    "submitSettleMs": 80,
+    "directHttpBlocked": true,
+    "directHttpStatus": 401
+  },
+  "notes": [
+    "Google Docs renders pages onto HTML5 <canvas.kix-canvas-tile-content>; Browser Bridge natively extracts DOCS_modelChunk canvas text in browser_snapshot/browser_get_text (~15 ms).",
+    "For the freshest live-edited full document text across all pages, run routine \"read_document\" (~170 ms same-origin /mobilebasic session fetch).",
+    "Use \"append_text\", \"replace_text\", or \"rename_document\" to edit Google Docs deterministically without guessing canvas pixel coordinates."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_document": {
+      "name": "read_document",
+      "description": "Fetches the complete, live-saved Google Doc across all pages via same-origin /mobilebasic using the signed-in browser session (~170 ms) and returns clean plain text in outputs.content.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "fetch",
+          "params": {
+            "url": "https://docs.google.com/document/d/{{url.docId}}/mobilebasic",
+            "method": "GET",
+            "stripHtml": true
+          },
+          "saveAs": "content",
+          "optional": false
+        }
+      ]
+    },
+    "append_text": {
+      "name": "append_text",
+      "description": "Focuses the Google Docs Kix editor canvas, jumps to the end of the document (Control+End), inserts a newline, and types text via trusted input.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "text": {
+          "type": "string",
+          "description": "Paragraph or text content to append to the document.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "press",
+          "params": { "key": "Escape" },
+          "optional": true
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "canvas.kix-canvas-tile-content, .kix-appview-editor" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "press",
+          "params": { "key": "Control+End" },
+          "optional": false
+        },
+        {
+          "op": "press",
+          "params": { "key": "Enter" },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{text}}",
+            "clear": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "iframe.docs-texteventtarget-iframe, .kix-appview-editor" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "rename_document": {
+      "name": "rename_document",
+      "description": "Renames the Google Doc via input.docs-title-input and commits with Enter.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "title": {
+          "type": "string",
+          "description": "New document title.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{title}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input.docs-title-input" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "replace_text": {
+      "name": "replace_text",
+      "description": "Opens Google Docs Find and Replace (Control+H), fills Find and Replace fields, clicks Replace all, and closes the dialog.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "find": {
+          "type": "string",
+          "description": "Exact text to find.",
+          "required": true
+        },
+        "replace": {
+          "type": "string",
+          "description": "Replacement text.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "press",
+          "params": { "key": "Control+h" },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{find}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#docs-findinput-input, .docs-findinput-input" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{replace}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#docs-findandreplacedialog-replace-input, input[aria-label*='Replace']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#docs-findandreplacedialog-button-replace-all" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "press",
+          "params": { "key": "Escape" },
+          "optional": true
+        }
+      ]
+    }
+  }
+}

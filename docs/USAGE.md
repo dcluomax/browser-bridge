@@ -103,7 +103,7 @@ Because the installer copies the built extension into `%LOCALAPPDATA%\BrowserBri
    ```
    Install the resulting `.xpi` from `extension/dist/signed/`.
 
-> **Updating later:** Re-run `.\scripts\install.ps1` (or `./scripts/install.sh`), then click **Reload** on the extension card in `edge://extensions` / `chrome://extensions`. User-shared tab grants persist automatically across extension reloads as long as the tab remains on the same origin.
+> **Updating later (`v0.7.0` → `v0.10.0`):** Re-run the bootstrapper or `.\scripts\install.ps1` (`./scripts/install.sh`), then click **Reload (`↻`)** once on the extension card in `edge://extensions` / `chrome://extensions` (accepting the Chromium `tabGroups` permission if prompted). Built-in timestamped `routines/*.json` playbooks refresh automatically while preserving all your custom routines and notes — see **[docs/UPGRADE.md](UPGRADE.md)**. User-shared tab grants persist across reloads as long as the tab stays on the same origin.
 
 ---
 

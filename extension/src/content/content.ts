@@ -7,7 +7,7 @@
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
 
-const CONTENT_VERSION = '0.7.0';
+const CONTENT_VERSION = '0.10.0';
 
 interface SnapshotOptions {
   maxChars?: number;
@@ -126,7 +126,12 @@ function childNodesOf(node: Element | ShadowRoot): Node[] {
   if ((node as Node).nodeType === Node.ELEMENT_NODE) {
     const el = node as Element;
     const sr = shadowRootOf(el);
-    if (sr) return Array.from(sr.childNodes);
+    if (sr) {
+      if (!sr.querySelector('slot') && el.childNodes.length > 0) {
+        return [...Array.from(sr.childNodes), ...Array.from(el.childNodes)];
+      }
+      return Array.from(sr.childNodes);
+    }
     if (el.localName === 'slot') {
       const assigned = (el as HTMLSlotElement).assignedNodes({ flatten: true });
       if (assigned.length) return assigned;
@@ -161,6 +166,14 @@ function shortUrl(href: string): string {
   if (href.startsWith('javascript:')) return 'javascript:';
   try {
     const url = new URL(href, location.href);
+    if (
+      url.origin === location.origin &&
+      url.pathname === location.pathname &&
+      url.search === location.search &&
+      url.hash
+    ) {
+      return truncate(url.hash, 36);
+    }
     if (url.origin === location.origin) return truncate(url.pathname + url.search + url.hash, 100);
     return truncate(url.href, 120);
   } catch {
@@ -224,6 +237,16 @@ function insideSectioning(el: Element): boolean {
   return Boolean(el.parentElement?.closest('article, aside, main, nav, section'));
 }
 
+function isLayoutTable(table: Element): boolean {
+  const explicit = attr(table, 'role')?.trim().toLowerCase();
+  if (explicit === 'table' || explicit === 'grid' || explicit === 'treegrid') return false;
+  if (explicit === 'presentation' || explicit === 'none') return true;
+  if (attr(table, 'border') !== '0' && !table.parentElement?.closest('table')) return false;
+  return !table.querySelector(
+    ':scope > caption, :scope > thead th, :scope > tbody > tr > th, :scope > tr > th, [role="columnheader"], [role="rowheader"]',
+  );
+}
+
 function implicitRole(el: Element): string | null {
   const tag = el.localName;
   switch (tag) {
@@ -257,10 +280,25 @@ function implicitRole(el: Element): string | null {
     case 'li': return 'listitem';
     case 'dt': return 'term';
     case 'dd': return 'definition';
-    case 'table': return 'table';
-    case 'thead': case 'tbody': case 'tfoot': return 'rowgroup';
-    case 'tr': return 'row';
-    case 'td': return 'cell';
+    case 'table':
+      return isLayoutTable(el) ? null : 'table';
+    case 'thead': case 'tbody': case 'tfoot': {
+      const tbl = el.closest('table');
+      return tbl && isLayoutTable(tbl) ? null : 'rowgroup';
+    }
+    case 'tr': {
+      const tbl = el.closest('table');
+      if (tbl && isLayoutTable(tbl)) {
+        return el.children.length > 1 && Boolean(el.querySelector('a[href]')) && !el.querySelector('table')
+          ? 'listitem'
+          : null;
+      }
+      return 'row';
+    }
+    case 'td': {
+      const tbl = el.closest('table');
+      return tbl && isLayoutTable(tbl) ? null : 'cell';
+    }
     case 'th': return attr(el, 'scope') === 'row' ? 'rowheader' : 'columnheader';
     case 'caption': return 'caption';
     case 'nav': return 'navigation';
@@ -331,6 +369,12 @@ function accessibleName(el: Element, role: string, maxChars = 150): string {
   }
   const ariaLabel = collapse(attr(el, 'aria-label'));
   if (ariaLabel) return truncate(ariaLabel, maxChars);
+
+  if (el.id === 't-name-box') return 'Name box';
+  if (el.id === 't-formula-bar-input' || (el.classList?.contains('cell-input') && el.closest('#t-formula-bar-input'))) {
+    return 'Formula bar';
+  }
+  if (el.classList?.contains('docs-title-input')) return 'Document title';
 
   const tag = el.localName;
   if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'meter' || tag === 'progress' || tag === 'output') {
@@ -606,11 +650,12 @@ function render(node: SNode | string, depth: number, w: Writer): void {
   for (const a of node.attrs) line += ` [${a}]`;
   if (node.ref) line += ` [ref=${node.ref}]`;
   const elementChildren = node.children.filter((c) => typeof c !== 'string');
+  const textLimit = node.role === 'code' ? 1200 : 400;
   if (node.value !== undefined) {
     line += `: ${quote(node.value)}`;
   } else if (elementChildren.length === 0 && node.children.length > 0) {
     const text = node.children.join(' ');
-    if (text && text !== node.name) line += `: ${truncate(text, 400)}`;
+    if (text && text !== node.name) line += `: ${truncate(text, textLimit)}`;
     w.push(line);
     return;
   }
@@ -618,6 +663,63 @@ function render(node: SNode | string, depth: number, w: Writer): void {
   if (elementChildren.length > 0 || node.value !== undefined) {
     for (const child of node.children) render(child, depth + 1, w);
   }
+}
+
+const BOILERPLATE_LANDMARKS = new Set(['banner', 'navigation', 'complementary', 'contentinfo']);
+const ALWAYS_KEEP_ROLES = new Set(['search', 'searchbox', 'combobox', 'textbox', 'form', 'dialog']);
+
+function hasMainLandmark(nodes: Array<SNode | string>): boolean {
+  for (const item of nodes) {
+    if (typeof item === 'string') continue;
+    if (item.role === 'main') return true;
+    if (hasMainLandmark(item.children)) return true;
+  }
+  return false;
+}
+
+function containsKeepRole(node: SNode): boolean {
+  if (ALWAYS_KEEP_ROLES.has(node.role)) return true;
+  return node.children.some((c) => typeof c !== 'string' && containsKeepRole(c));
+}
+
+function compactBoilerplateTree(nodes: Array<SNode | string>, insideBoilerplate = false): Array<SNode | string> {
+  const out: Array<SNode | string> = [];
+  let navLinksSeen = 0;
+  let navLinksOmitted = 0;
+
+  for (const item of nodes) {
+    if (typeof item === 'string') {
+      if (!insideBoilerplate || out.length < 8) out.push(item);
+      continue;
+    }
+    if (item.role === 'main' || item.role === 'dialog' || item.role === 'form') {
+      out.push(item);
+      continue;
+    }
+    const enteringBoilerplate = insideBoilerplate || BOILERPLATE_LANDMARKS.has(item.role);
+    if (enteringBoilerplate && !containsKeepRole(item)) {
+      const isNavLeaf = item.role === 'link' || item.role === 'menuitem';
+      const isPureLinkItem =
+        item.role === 'listitem' &&
+        item.children.length > 0 &&
+        item.children.every((c) => typeof c === 'string' || c.role === 'link' || c.role === 'list');
+      if (isNavLeaf || isPureLinkItem) {
+        navLinksSeen++;
+        if (navLinksSeen > 6) {
+          navLinksOmitted++;
+          continue;
+        }
+      }
+    }
+    out.push({
+      ...item,
+      children: compactBoilerplateTree(item.children, enteringBoilerplate),
+    });
+  }
+  if (navLinksOmitted > 0) {
+    out.push(`[… ${navLinksOmitted} navigation links collapsed to preserve main content]`);
+  }
+  return out;
 }
 
 function countIframeNodes(nodes: Array<SNode | string>): number {
@@ -628,6 +730,71 @@ function countIframeNodes(nodes: Array<SNode | string>): number {
     if (item.children.length > 0) count += countIframeNodes(item.children);
   }
   return count;
+}
+
+function extractBalancedJson(source: string, startIdx: number): string | null {
+  let i = startIdx;
+  while (i < source.length && /\s/.test(source[i])) i++;
+  const open = source[i];
+  if (open !== '{' && open !== '[') return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let pos = i; pos < source.length; pos++) {
+    const ch = source[pos];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{' || ch === '[') {
+      depth++;
+    } else if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) return source.slice(i, pos + 1);
+    }
+  }
+  return null;
+}
+
+function extractGoogleDocsCanvasText(): string {
+  if (location.hostname !== 'docs.google.com' || !location.pathname.startsWith('/document/')) return '';
+  if (!document.querySelector('canvas.kix-canvas-tile-content, .kix-appview-editor')) return '';
+  const chunks: string[] = [];
+  const marker = 'DOCS_modelChunk';
+  for (const script of Array.from(document.scripts)) {
+    const raw = script.textContent ?? '';
+    if (!raw.includes(marker)) continue;
+    let searchFrom = 0;
+    for (;;) {
+      const idx = raw.indexOf(marker, searchFrom);
+      if (idx < 0) break;
+      const eqIdx = raw.indexOf('=', idx + marker.length);
+      if (eqIdx < 0 || eqIdx - idx > 32) {
+        searchFrom = idx + marker.length;
+        continue;
+      }
+      const jsonSlice = extractBalancedJson(raw, eqIdx + 1);
+      searchFrom = eqIdx + 1;
+      if (!jsonSlice) continue;
+      try {
+        const parsed = JSON.parse(jsonSlice) as { chunk?: Array<{ ty?: string; s?: string }> } | Array<{ ty?: string; s?: string }>;
+        const arr = Array.isArray(parsed) ? parsed : parsed?.chunk;
+        if (!Array.isArray(arr)) continue;
+        for (const entry of arr) {
+          if (entry?.ty === 'is' && typeof entry.s === 'string' && entry.s) {
+            chunks.push(entry.s.replace(/\u000b/g, '\n').replace(/\r/g, ''));
+          }
+        }
+      } catch {
+        // ignore non-JSON assignment
+      }
+    }
+  }
+  return chunks.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function snapshot(options: SnapshotOptions = {}): SnapshotResult {
@@ -646,9 +813,33 @@ function snapshot(options: SnapshotOptions = {}): SnapshotResult {
     if (options.root) visitNode(rootEl, ctx, out);
     else visitChildren(rootEl, ctx, out);
   }
+  if (!options.root) {
+    const gdocsCanvasText = extractGoogleDocsCanvasText();
+    if (gdocsCanvasText) {
+      const paragraphs = gdocsCanvasText
+        .split('\n')
+        .map((line) => collapse(line))
+        .filter(Boolean)
+        .slice(0, 120);
+      if (paragraphs.length > 0) {
+        out.push({
+          role: 'document',
+          name: 'Google Docs Canvas Text',
+          attrs: [],
+          children: paragraphs.map((p) => ({ role: 'paragraph', name: '', attrs: [], children: [p] })),
+        });
+      }
+    }
+  }
   const visibleIframes = countIframeNodes(out);
-  const w = new Writer(maxChars);
+  let w = new Writer(maxChars);
   for (const node of out) render(node, 0, w);
+  if (w.full && !options.root && hasMainLandmark(out)) {
+    const compacted = compactBoilerplateTree(out);
+    const w2 = new Writer(maxChars);
+    for (const node of compacted) render(node, 0, w2);
+    w = w2;
+  }
   return {
     text: w.lines.join('\n'),
     truncated: w.full,
@@ -700,9 +891,11 @@ function hasShadowRoots(): boolean {
 }
 
 function pageText(): string {
+  const gdocsCanvasText = extractGoogleDocsCanvasText();
   const body = document.body ?? document.documentElement;
-  if (!body) return '';
-  return hasShadowRoots() ? composedText(body) : ((body as HTMLElement).innerText ?? body.textContent ?? '');
+  if (!body) return gdocsCanvasText;
+  const domText = hasShadowRoots() ? composedText(body) : ((body as HTMLElement).innerText ?? body.textContent ?? '');
+  return gdocsCanvasText ? `${gdocsCanvasText}\n\n${domText}` : domText;
 }
 
 function getText(maxChars = 20000): { text: string; truncated: boolean; url: string; title: string; isTop: boolean } {
@@ -1777,7 +1970,7 @@ function showHandoffCard(options: {
   const host = document.createElement('div');
   host.setAttribute('data-bb-overlay', 'handoff');
   host.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;pointer-events:auto;';
-  const shadow = host.attachShadow({ mode: 'closed' });
+  const shadow = host.attachShadow({ mode: 'closed', delegatesFocus: true });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -1801,8 +1994,9 @@ function showHandoffCard(options: {
     .msg { margin: 8px 0 12px; color: #e5e7eb; word-break: break-word; }
     .actions { display: flex; gap: 8px; justify-content: flex-end; }
     button {
-      cursor: pointer; border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 600; border: 1px solid transparent;
+      cursor: pointer; border-radius: 8px; padding: 6px 13px; min-block-size: 28px; min-inline-size: 28px; font-size: 12px; font-weight: 600; border: 1px solid transparent;
     }
+    button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
     .btn-cancel { background: rgba(255,255,255,0.08); color: #d1d5db; border-color: rgba(255,255,255,0.12); }
     .btn-cancel:hover { background: rgba(255,255,255,0.14); }
     .btn-go { background: #2563eb; color: #ffffff; }
@@ -1912,7 +2106,8 @@ function synthesizeLocator(el: Element): Locator {
     }
     const parent: Element | null = cur.parentElement;
     if (parent) {
-      const sameTag = Array.from(parent.children).filter((c: Element) => c.localName === cur!.localName);
+      const tagName = cur.localName;
+      const sameTag = Array.from(parent.children).filter((c: Element) => c.localName === tagName);
       if (sameTag.length > 1) {
         seg += `:nth-of-type(${sameTag.indexOf(cur) + 1})`;
       }
@@ -1943,7 +2138,7 @@ function startDemoRecorder(options: {
   const host = document.createElement('div');
   host.setAttribute('data-bb-overlay', 'demonstrate');
   host.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;pointer-events:auto;';
-  const shadow = host.attachShadow({ mode: 'closed' });
+  const shadow = host.attachShadow({ mode: 'closed', delegatesFocus: true });
 
   const style = document.createElement('style');
   style.textContent = `
@@ -1958,7 +2153,8 @@ function startDemoRecorder(options: {
     .rec { color: #f87171; font-weight: 700; font-size: 12px; }
     .hint { margin: 6px 0 10px; color: #d1d5db; font-size: 12px; }
     .btns { display: flex; gap: 8px; justify-content: flex-end; }
-    button { cursor: pointer; border-radius: 7px; padding: 5px 11px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+    button { cursor: pointer; border-radius: 7px; padding: 5px 11px; min-block-size: 28px; min-inline-size: 28px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+    button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
     .cancel { background: rgba(255,255,255,0.08); color: #d1d5db; }
     .finish { background: #10b981; color: #052e16; }
   `;

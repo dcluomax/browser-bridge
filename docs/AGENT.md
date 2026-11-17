@@ -12,12 +12,14 @@ The user shared a live, logged-in browser tab with you (`tab <TAB_ID>` in `<BROW
 2. Read the tab & check **Site Memory & Learned Perf Profile**:
    - Interactive outline + element refs (`[ref=e12]`; SVG diagram shapes appear as `role="shape"`): `browser_snapshot({ "tabId": <TAB_ID> })` (automatically surfaces `[Site Memory & Fast Routines]` + learned per-site perf adaptations!)
    - Browser Bridge automatically learns from errors per website (`load` timeouts -> `domcontentloaded`, SPA hydration races -> settle wait, CDP failures -> direct DOM input, 403 HTTP -> browser session, blocker recovery triads) and applies them transparently.
-   - Inspect site routines, learned `accessProfile`, tips, and recorded pitfalls: `browser_routine_list({ "tabId": <TAB_ID> })`
-   - Run a multi-step learned routine in 1 fast call (e.g., `read_diagram_xml`, `write_diagram_xml`, `insert_shape` on `diagrams.net`): `browser_routine_run({ "tabId": <TAB_ID>, "name": "<ROUTINE>", "arguments": { ... } })`
+   - Inspect site routines, timestamped JSON `verifiedAt`/`updatedAt`, learned `accessProfile`, tips, and recorded pitfalls: `browser_routine_list({ "tabId": <TAB_ID> })` (note: routines marked `[STALE]` indicate the website DOM may have redesigned since `verifiedAt` — inspect `browser_snapshot` and refresh via `browser_routine_save`)
+   - Run a multi-step learned routine in 1 fast call (built-in timestamped JSON playbooks include `google.com`, `docs.google.com/document`, `docs.google.com/spreadsheets`, `github.com`, `chatgpt.com`, `diagrams.net`, `youtube.com`, `wikipedia.org`, `reddit.com`, `x.com`, `stackoverflow.com`, `amazon.com`, `news.ycombinator.com`, `finance.yahoo.com`): `browser_routine_run({ "tabId": <TAB_ID>, "name": "<ROUTINE>", "arguments": { ... } })`
    - Discover page-registered WebMCP tools (`document.modelContext` / `<form toolname=...>`): `browser_webmcp_list({ "tabId": <TAB_ID> })` -> invoke via `browser_webmcp_call`
 3. Interact (`[read-write]` only — pass `tabId` + `ref` or `locator`):
    - `browser_click`, `browser_drag`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_set_checked`
    - `browser_press_key`, `browser_scroll`, `browser_upload_file`, `browser_handle_dialog`, `browser_wait_for`
+   - **Handoff & Demonstrate**: call `browser_handoff` when login, 2FA, CAPTCHA/Cloudflare, or payment is needed (pops a Continue card with `WAIT` badge); call `browser_demonstrate({ "saveAs": "..." })` to record a user demonstration directly into a reusable Site Routine!
+   - **Domain Fence & Diagnostics**: use `browser_allowlist` to fence tabs to `allowedOrigins`; inspect redacted HTTP exchanges with `browser_network` and JS errors with `browser_console`.
    - After discovering a faster workflow or pitfall workaround on a site, persist it via `browser_routine_save` so future tasks skip detours!
 4. Capture visual / full-page / element screenshots (background-safe, no focus steal):
    - Save directly to disk: `browser_screenshot({ "tabId": <TAB_ID>, "fullPage": true, "path": "shot.png" })`

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "domain": "reddit.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Skips guaranteed HTTP 403 anonymous blocks via directHttpBlocked=true; shreddit-* Shadow DOM + unslotted light-DOM traversal with domcontentloaded",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 300,
+    "preferredSnapshotFrames": "top",
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "Reddit uses shreddit-* Shadow DOM custom elements and blocks anonymous non-browser HTTP (use user's real browser tab or page.fetch on <url>.json).",
+    "Use \"search_reddit\" to search posts or \"read_thread\" to extract post + comments cleanly."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search_reddit": {
+      "name": "search_reddit",
+      "description": "Navigates directly to Reddit search results with domcontentloaded and snapshots matching threads.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Reddit search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://www.reddit.com/search/?q={{query:urlencode}}",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "read_thread": {
+      "name": "read_thread",
+      "description": "Reads the Reddit post body and visible comment tree from <main>.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 50000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main, #siteTable" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "thread",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

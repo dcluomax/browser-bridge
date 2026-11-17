@@ -150,6 +150,24 @@ function serveFixtures() {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'set-cookie': 'bbfixture=session; HttpOnly; SameSite=Lax' }).end(html);
       return;
     }
+    if (url.pathname === '/cloudflare-challenge.html') {
+      response.writeHead(403, { 'content-type': 'text/html; charset=utf-8' }).end(
+        '<!doctype html><title>Just a moment...</title><div class="cf-turnstile">Verify you are human by Cloudflare</div>',
+      );
+      return;
+    }
+    if (url.pathname === '/diag-probe.html') {
+      const sampleJwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl';
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>Diag Probe</title>
+        <input id="safe-note" placeholder="Note">
+        <input id="secret-pw" type="password" placeholder="Password">
+        <button id="fire-diag" onclick="
+          console.error('Auth failed for Bearer ${sampleJwt}');
+          fetch('/binary?size=16&api_key=sk-test-fixture-value-123', { headers: { Authorization: 'Bearer ${sampleJwt}' } });
+          this.textContent = 'Fired';
+        ">Run Probe</button>`);
+      return;
+    }
     if (url.pathname === '/redirect') {
       response.writeHead(302, { location: '/playwright.html' }).end();
       return;

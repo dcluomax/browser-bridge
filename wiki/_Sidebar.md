@@ -3,6 +3,7 @@
 **Start Here**
 - [[Home]]
 - [[Getting Started]]
+- [[Upgrade Notes]]
 - [[Browser Extension Guide]]
 - [[MCP Client Setup]]
 

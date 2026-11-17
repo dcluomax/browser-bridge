@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 2,
+  "domain": "diagrams.net",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "PWA #fragment open 30,000 ms timeout -> 4,960 ms; full <mxGraphModel> XML read/write in ~660 ms / ~870 ms; shape insert 3,740 ms -> 1,640 ms",
+  "accessProfile": {
+    "serviceWorkerNavigation": true,
+    "submitSettleMs": 80
+  },
+  "notes": [
+    "SVG diagram nodes and connector labels appear directly in browser_snapshot as role=\"shape\" with clickable, double-clickable, and draggable [ref=e...] handles.",
+    "For lossless diagram reading or generating/editing multi-node diagrams, run routine \"read_diagram_xml\" or \"write_diagram_xml\" (~660 ms in 1 call via Extras -> Edit Diagram) instead of dozens of manual canvas clicks.",
+    "Inserting or double-clicking a shape focuses the inline \"Edit Text\" box; press Escape before clicking top menubar items (File, Edit, Extras)."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "read_diagram_xml": {
+      "name": "read_diagram_xml",
+      "description": "Opens Extras -> Edit Diagram, reads the complete <mxGraphModel> XML into outputs.xml, and closes the dialog cleanly via Cancel.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        { "op": "press", "params": { "key": "Escape" }, "optional": true },
+        {
+          "op": "click",
+          "params": {
+            "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Extras", "exact": true }] }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Edit Diagram..." }] }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "inputValue",
+            "maxChars": 100000,
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
+                { "kind": "css", "value": "textarea" }
+              ]
+            }
+          },
+          "saveAs": "xml",
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
+                { "kind": "role", "value": "button", "name": "Cancel", "exact": true }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "write_diagram_xml": {
+      "name": "write_diagram_xml",
+      "description": "Replaces the active draw.io page diagram with the supplied <mxGraphModel> XML in one fast step via Extras -> Edit Diagram -> Apply.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "xml": {
+          "type": "string",
+          "description": "Complete <mxGraphModel>...</mxGraphModel> or <mxfile> XML for the active page.",
+          "required": true
+        }
+      },
+      "steps": [
+        { "op": "press", "params": { "key": "Escape" }, "optional": true },
+        {
+          "op": "click",
+          "params": {
+            "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Extras", "exact": true }] }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Edit Diagram..." }] }
+          },
+          "optional": false
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{xml}}",
+            "clear": true,
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
+                { "kind": "css", "value": "textarea" }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "dialog", "name": "Edit Diagram" },
+                { "kind": "role", "value": "button", "name": "Apply", "exact": true }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "insert_shape": {
+      "name": "insert_shape",
+      "description": "Searches for any shape by name in draw.io's sidebar, inserts it onto the canvas, writes its text label, and exits inline editing.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "shape": {
+          "type": "string",
+          "description": "Sidebar shape button name (e.g. Rectangle, Rounded Rectangle, Diamond, Cylinder, Cloud, Actor).",
+          "required": false,
+          "default": "Rectangle"
+        },
+        "label": {
+          "type": "string",
+          "description": "Text label to write inside the newly inserted shape.",
+          "required": false,
+          "default": ""
+        }
+      },
+      "steps": [
+        { "op": "press", "params": { "key": "Escape" }, "optional": true },
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 300,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "body:has(.geSidebarContainer[style*=\"width: 0px\"])" },
+                { "kind": "role", "value": "button", "name": "View", "exact": true }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 400,
+            "locator": { "steps": [{ "kind": "role", "value": "menuitem", "name": "Shapes Ctrl+Shift+K" }] }
+          },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{shape}}",
+            "clear": true,
+            "submit": true,
+            "locator": { "steps": [{ "kind": "role", "value": "textbox", "name": "Type / to search" }] }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "button", "name": "{{shape}}", "exact": true },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "press",
+          "params": {
+            "key": "Enter",
+            "timeoutMs": 1500,
+            "locator": { "steps": [{ "kind": "role", "value": "textbox", "name": "Edit Text" }] }
+          },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{label}}",
+            "clear": true,
+            "timeoutMs": 3000,
+            "locator": { "steps": [{ "kind": "css", "value": ".mxCellEditor" }] }
+          },
+          "optional": true
+        },
+        { "op": "press", "params": { "key": "Escape" }, "optional": true },
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 500,
+            "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Reset", "exact": true }] }
+          },
+          "optional": true
+        }
+      ]
+    },
+    "add_page": {
+      "name": "add_page",
+      "description": "Creates and activates a new page tab in the current draw.io diagram.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        { "op": "press", "params": { "key": "Escape" }, "optional": true },
+        {
+          "op": "click",
+          "params": {
+            "locator": { "steps": [{ "kind": "role", "value": "button", "name": "Insert Page", "exact": true }] }
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

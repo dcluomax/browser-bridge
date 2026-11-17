@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 2,
+  "domain": "google.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Search submit + clean #search extraction: 15,495 ms -> 1,292 ms (12.0x faster via domcontentloaded + top-frame fast path)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top",
+    "submitSettleMs": 900
+  },
+  "notes": [
+    "Use routine \"search\" to submit queries directly via textarea[name='q'] and extract clean #search / #rso results without header/footer clutter.",
+    "If Google presents /sorry/index CAPTCHA, Browser Bridge flags challenge=captcha; call browser_handoff for human completion."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "search": {
+      "name": "search",
+      "description": "Dismisses optional consent dialog, submits a Google search query, and returns clean #search organic & AI Overview text in outputs.results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": {
+          "type": "string",
+          "description": "Search query string.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 400,
+            "locator": {
+              "steps": [
+                { "kind": "role", "value": "button", "name": "Accept all" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "textarea[name='q'], input[name='q']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 24000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#search, #rso, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "read_results": {
+      "name": "read_results",
+      "description": "Reads clean Google SERP organic results and AI Overview from #search / main without navigation chrome.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 24000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#search, #rso, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "next_results_page": {
+      "name": "next_results_page",
+      "description": "Advances to the next Google search results page via #pnnext and extracts #search results.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "a#pnnext, a[aria-label='Next']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 24000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#search, #rso, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

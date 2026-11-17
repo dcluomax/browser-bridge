@@ -5,13 +5,14 @@
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
+[![Release v0.10.0](https://img.shields.io/badge/Release-v0.10.0-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
 [![100% Local](https://img.shields.io/badge/100%25%20Local-0%20Cloud%20Relay-0284c7)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Zero-Port Secure](https://img.shields.io/badge/Secure-0%20TCP%20Ports%20%7C%203--Layer%20ACL-059669)](docs/SECURITY_MODEL.md)
 [![Native Fast](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20Pipe%20IPC-d97706)](#four-core-pillars-local--secure--fast--self-evolving)
-[![Self-Evolving](https://img.shields.io/badge/Self--Evolving-SiteLearner%20%2B%20Routines-6366f1)](docs/FEATURES.md)
+[![Self-Evolving](https://img.shields.io/badge/Self--Evolving-14%20Site%20JSONs%20%7C%20Up%20to%2031x%20Faster-6366f1)](#timestamped-site-optimization-jsons--measured-speedups-v0100)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
 
-**English** · **[简体中文](README.zh-CN.md)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[MCP Client Setup](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**English** · **[简体中文](README.zh-CN.md)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.10.0)](docs/UPGRADE.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[MCP Client Setup](docs/MCP_CLIENTS.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -30,7 +31,7 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or cloud brows
 | **1. 100% LOCAL** | Runs strictly on your machine inside your daily browser — zero cloud relays, zero remote containers, zero WebDriver downloads | Instant access to your live corporate SSO, MFA sessions, cookies, and extensions with zero re-login friction |
 | **2. ZERO-PORT SECURE** | **0 open TCP/WebSocket ports**; OS-authenticated Windows SID Named Pipes (`CurrentUserOnly`) & `0700`/`0600` Unix sockets + **3-layer Read-Only / Read-Write ACLs** + password/JWT redaction | Web pages and other OS users cannot reach the bridge; unshared personal tabs remain completely invisible |
 | **3. NATIVE FAST** | **~1.5 MB standalone Rust binary** (~8 MB RAM), **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM content engine, background focus-free screenshots, and 0-dependency Python SDK | Sub-millisecond local IPC with zero Node/Python driver bloat or browser startup overhead |
-| **4. SELF-EVOLVING** | Error-driven **`SiteLearner`** + persistent **Site Memory Routines** + native W3C **WebMCP (`document.modelContext`)** | Every timeout, SPA hydration race, cookie-wall blocker, or `403` WAF block teaches a permanent domain playbook so repeat tasks finish in 1 call |
+| **4. SELF-EVOLVING** | **14 timestamped `routines/*.json` playbooks** (`schemaVersion: 2`, `verifiedAt` auto-merge, `[STALE]` drift guard) + **`SiteLearner`** + **`browser_demonstrate`** + W3C **WebMCP** | **5×–31× measured speedups** across Google Search, Docs, Sheets/Excel, GitHub, ChatGPT, Amazon & Yahoo Finance; repeat workflows finish in 1 call |
 
 ### Headless Drivers vs. Browser Bridge
 
@@ -163,37 +164,71 @@ Browser Bridge enforces **three independent safety layers** before any mutation 
 2. **Popup Global Read-Only Lock** — Instant per-profile kill switch in the toolbar popup that freezes all clicks, typing, navigation, and tab creation across every connected agent.
 3. **Per-Tab Access Mode (`[read-only]` vs `[read-write]`)** — Share sensitive dashboards (Grafana, Azure/AWS consoles, production logs) as `Read-Only` while granting `Read-Write` only to local dev apps or sandboxes. Promote or downgrade anytime with one click.
 
-Additional popup capabilities:
+Additional popup & runtime capabilities:
 - **Trusted Input (`chrome.debugger`)** — Enabled by default on Chromium so clicks, drags, and shortcuts carry genuine user activation; automatically falls back to DOM events on Firefox or when detached.
-- **Background `[Agent]` Tab Grouping** — Agent-opened tabs open in the background (`active: false`) inside a collapsed `[Agent]` group without stealing window focus.
+- **Silent Background `[Agent]` Tab Groups, Named Tabs & Idle GC** — Agent-opened tabs open silently in the background (`active: false` default) inside a collapsed `[Agent]` group without stealing focus, support persistent reusable handles (`name="work-doc"`), auto-close after 10 minutes of idle time (`10m / 30m / 60m / Never`), and render live `RW` / `RO` / `RUN` / `WAIT` badges.
+- **Interactive Human Handoff & Password-Safe Teach Recorder** — `browser_handoff` pops a closed-ShadowRoot Continue card (`WAIT` badge) for logins, 2FA/MFA, CAPTCHAs, and payments; `browser_demonstrate` (or Popup **Teach Routine**) records your clicks/inputs while ignoring password/OTP fields and saves a reusable Routine.
+- **Domain Allowlist Fence & Credential-Redacted Diagnostics** — `browser_allowlist` restricts tabs to `allowedOrigins` (hosts or `*.domain.com` wildcards); `browser_network` and `browser_console` scrub `Authorization`, `Cookie`, API keys, passwords, and JWTs to `[REDACTED]`.
 - **Multi-Language UI** — Built-in English (`en`), Simplified Chinese (`zh_CN`), Traditional Chinese (`zh_TW`), and Japanese (`ja`) with dark/light theme toggle.
 
 ---
 
-## Adaptive Site Memory, Fast Routines & WebMCP
+## Timestamped Site Optimization JSONs & Measured Speedups (`v0.10.0`)
 
 <p align="center">
-  <img src="docs/assets/site-memory-flow.svg" alt="Diagram showing Adaptive Error-Driven Site Learning turning first-visit timeouts, overlays, and 403 WAF errors into sub-second domain playbooks and routines" width="100%" />
+  <img src="docs/assets/site-memory-flow.svg" alt="Diagram showing Timestamped routines/*.json playbooks, Adaptive Error-Driven SiteLearner, and 5x-31x measured speedups" width="100%" />
 </p>
 
-Real-world web apps stall `window.onload` with analytics beacons, re-render during SPA hydration, cover buttons with cookie banners, or block plain HTTP with `403` WAF rules. Browser Bridge learns per-domain adaptations automatically:
+> **Upgrading from `v0.7.0`?** Re-run the bootstrapper or `scripts/install.*` and click **Reload (`↻`)** once on the Browser Bridge extension card. Built-in `routines/*.json` playbooks with newer `verifiedAt` timestamps refresh automatically while preserving all your custom routines and notes — see **[docs/UPGRADE.md](docs/UPGRADE.md)**.
 
-- **Error-Driven `SiteLearner`** — Observes `load` timeouts → switches future visits to `domcontentloaded`; detects hydration `stale_ref` races → applies tuned `hydrationSettleMs`; records `Error -> Recovery Action -> Retry Success` triads for overlay blockers; remembers `403` WAF endpoints so `smart_fetch` routes through the authenticated browser tab.
-- **Executable Site Memory Routines** — Parameterized multi-step workflows stored locally in `routines/<domain>.json` (includes built-in `app.diagrams.net` routines such as `read_diagram_xml`, `write_diagram_xml`, and `insert_shape`). Agents inspect routines via `browser_routine_list`, execute in 1 call via `browser_routine_run`, and save newly discovered workflows via `browser_routine_save`.
+Browser Bridge `v0.10.0` ships **14 git-tracked, timestamped site optimization playbooks** in [`routines/*.json`](routines/) (`schemaVersion: 2`):
+
+- **Upgrade-Aware Timestamped Merge (`verifiedAt` & `updatedAt`)** — Every playbook and routine carries ISO-8601 UTC verification timestamps and `speedupSummary`. Minor-version upgrades automatically refresh built-in selectors whose `verifiedAt` is newer than an older local cache's `updatedAt` without overwriting custom user flows or notes.
+- **Website-Redesign Drift Detection (`[STALE]`)** — If a live website redesign causes `>= 2` consecutive selector or timeout failures on a routine, Browser Bridge automatically marks it `[STALE]` with `staleReason` so agents inspect a fresh `browser_snapshot` and update the routine instead of repeating broken selectors.
+- **Path-Scoped Apps, Friendly Aliases & Dynamic URL Variables** — Isolates multi-app hosts (`docs.google.com/document` vs `docs.google.com/spreadsheets`), resolves friendly aliases (`google-docs`, `google-sheets`, `google-excel`, `chatgpt`, `drawio`, `hn`), executes in-tab `op: "fetch"` (`stripHtml`), URL-encodes parameters (`{{query:urlencode}}`), and injects live tab variables (`{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, `{{url.origin}}`).
+
+### 5 Flagship Website Optimizations & Measured Benchmarks
+
+| Site & Playbook JSON | Engine + Routine Optimizations | Unoptimized (`v0.7.0`) | Optimized (`v0.10.0`) | Measured Gain |
+| --- | --- | --- | --- | --- |
+| **Google Search**<br>[`routines/google.com.json`](routines/google.com.json) | `domcontentloaded` + `top` single-frame fast path + `search(query)`, `read_results()`, `next_results_page()` | `15,495 ms` | **`1,292–1,423 ms`** | **~11–12× faster** |
+| **Google Docs**<br>[`routines/docs.google.com__document.json`](routines/docs.google.com__document.json) | Fast open + native Kix `<canvas>` `DOCS_modelChunk` parser (**`10 ms`** snapshot, 0 network/eval) + same-origin `/mobilebasic` `read_document` + `append_text`, `replace_text`, `rename_document` | `8,218 ms` open / empty `<canvas>` | **`1,528 ms`** open · **`10 ms`** snapshot · **`~170–267 ms`** full doc | **5.4× faster** + Canvas text unlocked |
+| **Google Sheets / Excel**<br>[`routines/docs.google.com__spreadsheets.json`](routines/docs.google.com__spreadsheets.json) | Accessible `"Name box"` (`#t-name-box`) & `"Formula bar"` (`#t-formula-bar-input`) + `/gviz/tq?tqx=out:csv` `read_sheet_csv` + coordinate jump `read_cell`, `write_cell`, `select_range` | `8,077 ms` / opaque `<canvas>` grid | **`259 ms`** cell R/W · **`~201–325 ms`** full CSV | **31× faster** |
+| **GitHub**<br>[`routines/github.com.json`](routines/github.com.json) | `domcontentloaded` + `120 ms` Turbo settle + 200-link repo header compaction + `{{url.repo}}` `read_main_content`, `search_repo_issues`, `search_github`, `go_to_file` | `3,469 ms` nav + header truncation | **`~920 ms`** nav · **`~50 ms`** full README/PR read | **3.8× faster** + zero truncation |
+| **ChatGPT**<br>[`routines/chatgpt.com.json`](routines/chatgpt.com.json) | Protects composer `<form>` inside `contentinfo` + `draft_prompt` + deterministic `stop-button` streaming completion wait (`ask_and_wait`), `read_conversation`, `new_chat` | Clipped composer / blind polling | **`~690–914 ms`** ready · **`117 ms`** safe draft | Deterministic stream wait |
+
+### 9 Additional Built-in Timestamped Playbooks
+
+| Playbook JSON | Built-in Routines | Engine Adaptation & Measured Result |
+| --- | --- | --- |
+| [`routines/diagrams.net.json`](routines/diagrams.net.json) | `read_diagram_xml`, `write_diagram_xml`, `insert_shape`, `add_page` | PWA `#fragment` open `30s` timeout → `4.96 s`; XML read **`660 ms`**, write **`870 ms`**, shape insert **`1.64 s`** |
+| [`routines/amazon.com.json`](routines/amazon.com.json) | `search_products`, `read_product_details` | Soft-gate bypass + `domcontentloaded` + `top`-frame ad skip: `16,043 ms` → **`2,491 ms` (6.4× faster)** |
+| [`routines/finance.yahoo.com.json`](routines/finance.yahoo.com.json) | `lookup_quote`, `read_quote_summary` | `domcontentloaded` + `top`-frame + header compaction: `8,050 ms+` → **`702 ms` (11.5× faster)** |
+| [`routines/youtube.com.json`](routines/youtube.com.json) | `search_videos`, `open_transcript` | `domcontentloaded` + `250 ms` Polymer hydration: **`2,042 ms`** video search (avoids 8s–30s streaming `onload` stall) |
+| [`routines/wikipedia.org.json`](routines/wikipedia.org.json) | `search_article`, `read_article` | `#cite_note` hash compression (~8 KB saved/article) + 35k-char clean `#mw-content-text` prose in **`~2.2 s`** |
+| [`routines/news.ycombinator.com.json`](routines/news.ycombinator.com.json) | `read_front_page`, `search_hn` | Flattens nested `border=0` layout tables so all **30/30** front-page stories fit in 19.4 KB with zero truncation |
+| [`routines/stackoverflow.com.json`](routines/stackoverflow.com.json) | `dismiss_cookies`, `search_questions`, `read_qa` | Auto-dismisses `#onetrust-banner-sdk` + preserves 1,200-char `<pre><code>` blocks + **`~60 ms`** `#mainbar` read |
+| [`routines/reddit.com.json`](routines/reddit.com.json) | `search_reddit`, `read_thread` | `directHttpBlocked = true` skips guaranteed anonymous `403` blocks + pierces `shreddit-*` Shadow DOM & light DOM |
+| [`routines/x.com.json`](routines/x.com.json) | `search_posts`, `draft_post` | `domcontentloaded` + `350 ms` SPA hydration + automatic Cloudflare/bot-wall detection for `browser_handoff` |
+
+### Adaptive `SiteLearner` & Native W3C WebMCP
+
+- **Error-Driven `SiteLearner`** — Even on websites without a pre-shipped JSON file, Browser Bridge observes `load` timeouts → switches future visits to `domcontentloaded`; detects hydration `stale_ref` races → applies tuned `hydrationSettleMs`; records `Error -> Recovery Action -> Retry Success` triads for overlay blockers; and remembers `403` WAF endpoints so `smart_fetch` routes through the live browser tab.
 - **Native W3C WebMCP (`document.modelContext`)** — Automatically discovers imperative tools registered via `document.modelContext.registerTool(...)` / `navigator.modelContext.registerTool(...)` and declarative `<form toolname="...">` actions across Edge, Chrome, and Firefox (`browser_webmcp_list` / `browser_webmcp_call`).
 
 ---
 
-## MCP Tool Catalog (26 Tools + Resources + Prompts)
+## MCP Tool Catalog (31 Tools + Dual-Gated Eval + Resources + Prompts)
 
 | Category | Tools | Description |
 | --- | --- | --- |
-| **Discovery & Tabs** | `browser_status`, `browser_tabs` | Inspect connected browsers/profiles (`browser="edge"` or `browser="Work"`); `list`, `new`, `select`, `close` tabs |
-| **Navigation** | `browser_navigate`, `browser_history` | Navigate with learned wait strategies (`domcontentloaded`, `load`, `commit`); `back`, `forward`, `reload` |
-| **Page Reading** | `browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element` | Accessibility outline with stable refs (`e12`, cross-origin iframe `f3e7`, SVG `role="shape"`), Shadow DOM traversal, structured locators, masked passwords |
+| **Discovery, Tabs & Allowlist** | `browser_status`, `browser_tabs`, `browser_allowlist` | Inspect browsers/profiles; `list`, silent background `new` (`active: false`, collapsed `[Agent]` `group`, persistent `name`), `select`, `close`; `allowedOrigins` domain fence |
+| **Navigation** | `browser_navigate`, `browser_history` | Navigate with learned wait strategies (`domcontentloaded`, `load`, `commit`) & bot-wall detection; `back`, `forward`, `reload` |
+| **Page Reading & Diagnostics** | `browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element`, `browser_network`, `browser_console` | Smart `<main>`-budgeted outline (`e12`, iframe `f3e7`, SVG `role="shape"`, Kix `<canvas>` text), structured locators, credential-redacted HTTP traffic & JS console errors |
 | **User Actions** | `browser_click`, `browser_hover`, `browser_drag`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_set_checked`, `browser_press_key`, `browser_scroll` | Ref- or locator-targeted interactions with covered-element guards, modifier keys, HTML5/pointer drag-and-drop, and verified checkbox toggling |
 | **Files, Dialogs & Waits** | `browser_upload_file`, `browser_handle_dialog`, `browser_wait_for`, `browser_screenshot` | Chunked file input uploads, `alert`/`confirm`/`prompt` handling, observable state waits, background viewport/full-page/element PNG & JPEG screenshots |
-| **Site Memory & WebMCP** | `browser_routine_list`, `browser_routine_run`, `browser_routine_save`, `browser_webmcp_list`, `browser_webmcp_call` | Per-domain learned performance profiles, pitfall logs, 1-call multi-step routines, and W3C WebMCP page tool discovery/invocation |
+| **Human Handoff & Teach** | `browser_handoff`, `browser_demonstrate` | Closed-ShadowRoot `WAIT` Continue card for login/2FA/CAPTCHA/payment; password-safe workflow recorder saving directly to `Site Memory` |
+| **Site Memory & WebMCP** | `browser_routine_list`, `browser_routine_run`, `browser_routine_save`, `browser_webmcp_list`, `browser_webmcp_call` | Timestamped `routines/*.json` playbooks (`[STALE]` drift guard), 1-call multi-step routines (`op: "fetch"`, `{{url.*}}`), and W3C WebMCP discovery/invocation |
 | **Optional Script Eval** | `browser_evaluate` | Disabled by default; requires **both** `BrowserBridge mcp --allow-evaluate` **and** the popup toggle |
 
 MCP **Resources** (`bridge://guide`, `bridge://status`, `bridge://tabs`, `bridge://routines`) and **Prompts** (`inspect-shared-tab`, `act-in-shared-tab`) are also exposed out of the box.
@@ -231,26 +266,29 @@ Read the complete **[Python SDK & Direct IPC Reference](python/README.md)** and 
 | Document | Contents |
 | --- | --- |
 | **[docs/INSTALL.md](docs/INSTALL.md)** | AI Agent 1-Prompt installation playbook (zero-build SHA-256 prebuilt release setup) |
+| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.7.0` → `v0.10.0` Upgrade Notes, timestamped `routines/*.json` auto-merge & `[STALE]` drift guard |
+| **[CHANGELOG.md](CHANGELOG.md)** | Full release history and measured per-site speedup benchmarks |
 | **[llms.txt](llms.txt)** | Machine-readable repository index for LLM coding agents |
 | **[docs/USAGE.md](docs/USAGE.md)** | Complete installation, onboarding, popup controls, CLI subcommands, and daily workflows |
-| **[docs/FEATURES.md](docs/FEATURES.md)** | Deep dive into all 26 MCP tools, `SiteLearner`, Site Memory routines, WebMCP, and SVG/iframe snapshots |
+| **[docs/FEATURES.md](docs/FEATURES.md)** | Deep dive into all 31+1 MCP tools, 14 `routines/*.json` playbooks, `SiteLearner`, WebMCP, and Canvas/SVG snapshots |
 | **[docs/MCP_CLIENTS.md](docs/MCP_CLIENTS.md)** | Copy-paste setup for GitHub Copilot, VS Code, Claude Desktop, Claude Code, Cursor, Windsurf, and Cline |
-| **[docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md)** | Zero-port IPC isolation, 3-layer ACLs, credential redaction, and human handoff invariants |
+| **[docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md)** | Zero-port IPC isolation, 3-layer ACLs, `allowedOrigins`, credential redaction, and human handoff invariants |
 | **[docs/IPC_PROTOCOL.md](docs/IPC_PROTOCOL.md)** | Direct Named Pipe / Unix Socket & `BrowserBridge rpc` JSON-line protocol for non-Python languages |
-| **[python/README.md](python/README.md)** | Full Python SDK guide (locators, waits, `page.request` vs `browser.request`, error codes) |
+| **[python/README.md](python/README.md)** | Full Python SDK guide (locators, routines, handoffs, network/console capture, `smart_fetch`) |
 | **[wiki/](wiki/Home.md)** | Multi-page GitHub Wiki source mirrored automatically to the repository Wiki |
 
 ```text
 browser-bridge/
+├── routines/           # 14 git-tracked, timestamped schema v2 site optimization JSON playbooks (5x-31x speedups)
 ├── extension/          # Cross-browser TypeScript + React 19 + Astryx extension (Chromium MV3 & Firefox MV2)
 ├── rust/
 │   └── crates/
-│       ├── bridge-core/     # Named Pipe / Unix Socket IPC, Native Messaging, HTTP, SiteLearner & Routines
+│       ├── bridge-core/     # Named Pipe / Unix Socket IPC, Native Messaging, HTTP, SiteLearner & Routines v2
 │       └── browser-bridge/  # Standalone Native Host, MCP server, RPC server, installer & CLI
 ├── python/             # Zero-dependency Python 3.10+ SDK (`browser_bridge`)
 ├── e2e/                # Real-browser MCP + Python SDK end-to-end test harness & HTML fixtures
-├── scripts/            # Turnkey cross-platform install, uninstall & sanitization check scripts
-├── docs/               # Illustrated guides, architecture specs & vector SVG diagrams
+├── scripts/            # Zero-build bootstrappers, source installers, SVG layout & sanitization verifiers
+├── docs/               # Illustrated guides, Upgrade Notes, architecture specs & vector SVG diagrams
 └── wiki/               # Full GitHub Wiki project pages
 ```
 

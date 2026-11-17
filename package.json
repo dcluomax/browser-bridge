@@ -1,6 +1,6 @@
 {
   "name": "browser-bridge-monorepo",
-  "version": "0.7.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Local, Secure, Fast (~1.1 ms Rust Pipe IPC), and Self-Evolving browser bridge (MCP server, Edge/Chrome/Firefox extension, and 0-dep Python SDK) for your own signed-in tabs.",
   "license": "MIT",

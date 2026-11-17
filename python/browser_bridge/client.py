@@ -599,6 +599,8 @@ class BrowserBridge:
         "page.queryAll",
         "page.waitFor",
         "page.screenshot",
+        "page.network",
+        "page.console",
         "page.webmcp.list",
         "page.webmcp.call",
         "routine.list",
@@ -678,13 +680,45 @@ class BrowserBridge:
         assert self._transport is not None
         return self._transport.call(method, payload, self.timeout + 10_000 if timeout is None else timeout)
 
-    def new_page(self, url: str | None = None) -> Page:
-        result = self.call("tabs.new")
-        page = Page(self, result["tabId"])
-        self._owned_pages[page.tab_id] = page
-        if url is not None:
+    def new_page(
+        self,
+        url: str | None = None,
+        *,
+        active: bool = False,
+        name: str | None = None,
+        group: str | None = None,
+        allowed_origins: list[str] | None = None,
+    ) -> Page:
+        params: dict[str, Any] = {"active": bool(active)}
+        if name is not None:
+            params["name"] = name
+        if group is not None:
+            params["group"] = group
+        if allowed_origins is not None:
+            params["allowedOrigins"] = list(allowed_origins)
+        result = self.call("tabs.new", params)
+        page = self._owned_pages.get(result["tabId"]) or Page(self, result["tabId"])
+        if not name:
+            self._owned_pages[page.tab_id] = page
+        if url is not None and not (result.get("reused") and result.get("url") and result.get("url") != "about:blank"):
             page.goto(url)
         return page
+
+    def allowlist(
+        self,
+        origins: list[str] | None = None,
+        *,
+        tab_id: int | None = None,
+        clear: bool = False,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if origins is not None:
+            params["origins"] = list(origins)
+        if tab_id is not None:
+            params["tabId"] = tab_id
+        if clear:
+            params["clear"] = True
+        return self.call("session.allowlist", params)
 
     @property
     def pages(self) -> list[Page]:
@@ -1012,9 +1046,13 @@ class Page(_FinderScope):
                     return variables[key]
             out = template
             for k, v in variables.items():
+                str_val = "" if v is None else (v if isinstance(v, str) else json.dumps(v))
+                enc_tok = "{{" + k + ":urlencode}}"
+                if enc_tok in out:
+                    out = out.replace(enc_tok, urllib.parse.quote(str_val, safe=""))
                 tok = "{{" + k + "}}"
                 if tok in out:
-                    out = out.replace(tok, "" if v is None else (v if isinstance(v, str) else json.dumps(v)))
+                    out = out.replace(tok, str_val)
             return out
         if isinstance(template, list):
             return [Page._interpolate_step(x, variables) for x in template]
@@ -1063,15 +1101,40 @@ class Page(_FinderScope):
             "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
             "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
             "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
+            "fetch": "page.fetch", "page.fetch": "page.fetch",
             "navigate": "page.navigate", "history": "page.history", "dialog": "page.dialog",
             "webmcp.list": "page.webmcp.list", "webmcp.call": "page.webmcp.call",
         }
         variables: dict[str, Any] = {}
+        needs_url_vars = any(
+            isinstance((spec or {}).get("default"), str) and "{{url." in spec["default"]
+            for spec in (routine.get("params") or {}).values()
+        ) or "{{url." in json.dumps(routine.get("steps") or [])
+        if needs_url_vars:
+            cur_url = self.url
+            parsed_u = urllib.parse.urlsplit(cur_url)
+            variables["url.href"] = cur_url
+            if parsed_u.scheme and parsed_u.netloc:
+                variables["url.origin"] = f"{parsed_u.scheme}://{parsed_u.netloc}"
+            segs = [s for s in parsed_u.path.split("/") if s]
+            if "d" in segs:
+                d_idx = segs.index("d")
+                if d_idx + 1 < len(segs):
+                    variables["url.docId"] = segs[d_idx + 1]
+            if parsed_u.hostname and parsed_u.hostname.lower() == "github.com" and len(segs) >= 2:
+                variables["url.repo"] = f"{segs[0]}/{segs[1]}"
+            gid_val = "0"
+            for raw_q in (parsed_u.query, parsed_u.fragment):
+                qmap = urllib.parse.parse_qs(raw_q)
+                if qmap.get("gid"):
+                    gid_val = qmap["gid"][0]
+            variables["url.gid"] = gid_val
+
         for p_name, spec in (routine.get("params") or {}).items():
             if arguments and p_name in arguments:
                 variables[p_name] = arguments[p_name]
             elif "default" in spec and spec["default"] is not None:
-                variables[p_name] = spec["default"]
+                variables[p_name] = self._interpolate_step(spec["default"], variables)
             elif spec.get("required"):
                 raise BridgeError("bad_request", f"Missing required routine argument '{p_name}'.")
         if arguments:
@@ -1085,6 +1148,7 @@ class Page(_FinderScope):
             op = step["op"]
             method = op_map.get(op, op)
             step_params = dict(self._interpolate_step(step.get("params") or {}, variables))
+            strip_html = bool(step_params.pop("stripHtml", False)) if method == "page.fetch" else False
             if op in {"doubleClick", "dblclick"}:
                 step_params["doubleClick"] = True
             if method == "page.type" and step.get("optional") and step_params.get("text") == "":
@@ -1094,7 +1158,20 @@ class Page(_FinderScope):
                 steps_run += 1
                 save_as = step.get("saveAs")
                 if save_as:
-                    val = res["value"] if isinstance(res, dict) and "value" in res else (res["text"] if isinstance(res, dict) and "text" in res else res)
+                    if method == "page.fetch" and isinstance(res, dict) and isinstance(res.get("data"), str):
+                        raw_txt = base64.b64decode(res["data"]).decode("utf-8", errors="replace")
+                        if strip_html:
+                            import html as _html
+                            import re as _re
+                            no_scripts = _re.sub(r"(?is)<(?:script|style|head)\b.*?</(?:script|style|head)>", "", raw_txt)
+                            with_breaks = _re.sub(r"(?i)</?(?:p|div|br|li|tr|h[1-6]|table)\b[^>]*>", "\n", no_scripts)
+                            no_tags = _re.sub(r"<[^>]+>", "", with_breaks)
+                            lines_clean = [ln.strip() for ln in _html.unescape(no_tags).splitlines()]
+                            val: Any = _re.sub(r"\n{3,}", "\n\n", "\n".join(lines_clean)).strip()
+                        else:
+                            val = raw_txt
+                    else:
+                        val = res["value"] if isinstance(res, dict) and "value" in res else (res["text"] if isinstance(res, dict) and "text" in res else res)
                     outputs[save_as] = val
                     variables[save_as] = val
             except BridgeError:
@@ -1134,6 +1211,79 @@ class Page(_FinderScope):
         if isinstance(self.browser._transport, _Transport):
             return self.browser.call("routine.save", params)
         return self.browser.call("site.save", params)
+
+    def handoff(
+        self,
+        message: str | None = None,
+        *,
+        bring_to_front: bool = True,
+        timeout: float = 300_000,
+    ) -> dict[str, Any]:
+        """Hands the tab to the user with a floating Continue card and WAIT badge, resuming when Continue is clicked."""
+        budget = _timeout(timeout)
+        params: dict[str, Any] = {"bringToFront": bool(bring_to_front), "timeoutMs": budget}
+        if message:
+            params["message"] = message
+        return self._call("page.handoff", params, timeout=budget + 10_000)
+
+    def resolve_handoff(self, action: str = "continue") -> dict[str, Any]:
+        return self._call("page.handoff", {"action": action})
+
+    def demonstrate(
+        self,
+        instruction: str | None = None,
+        *,
+        save_as: str | None = None,
+        description: str = "",
+        bring_to_front: bool = True,
+        timeout: float = 300_000,
+    ) -> dict[str, Any]:
+        """Records user-demonstrated steps on the page (never passwords/OTPs) and optionally saves as a Site Routine."""
+        budget = _timeout(timeout)
+        params: dict[str, Any] = {"bringToFront": bool(bring_to_front), "timeoutMs": budget}
+        if instruction:
+            params["instruction"] = instruction
+        out = self._call("page.demonstrate", params, timeout=budget + 10_000)
+        if out.get("completed") and save_as and out.get("steps"):
+            steps = out["steps"]
+            self.save_routine(
+                routine={
+                    "name": save_as,
+                    "description": description or f"User-demonstrated workflow ({len(steps)} steps).",
+                    "readOnly": False,
+                    "params": {},
+                    "steps": steps,
+                }
+            )
+            out["savedRoutine"] = save_as
+        return out
+
+    def finish_demonstration(self, action: str = "finish") -> dict[str, Any]:
+        return self._call("page.demonstrate", {"action": action})
+
+    def start_network_capture(
+        self,
+        *,
+        max_entries: int = 200,
+        url_include: str | None = None,
+        clear: bool = True,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"action": "start", "maxEntries": max_entries, "clear": clear}
+        if url_include:
+            params["urlInclude"] = url_include
+        return self._call("page.network", params)
+
+    def network_exchanges(self, *, only_failures: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        return self._call("page.network", {"action": "status", "onlyFailures": only_failures, "limit": limit}).get("exchanges") or []
+
+    def stop_network_capture(self, *, only_failures: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        return self._call("page.network", {"action": "stop", "onlyFailures": only_failures, "limit": limit}).get("exchanges") or []
+
+    def console_messages(self, *, level: str = "all", limit: int = 100, clear: bool = False) -> list[dict[str, Any]]:
+        return self._call("page.console", {"action": "read", "level": level, "limit": limit, "clear": clear}).get("entries") or []
+
+    def clear_console(self) -> int:
+        return int(self._call("page.console", {"action": "clear"}).get("cleared", 0))
 
     def close(self) -> None:
         if self._closed:

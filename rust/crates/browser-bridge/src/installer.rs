@@ -177,9 +177,15 @@ pub fn install(args: &[String], output: &mut dyn Write) -> i32 {
         return 1;
     }
     let guide_path = bridge_core::ensure_agent_guide(Some(&host_path));
+    let seeded_count = bridge_core::routines::seed_builtin_playbooks_to_disk();
     let _ = writeln!(output, "host:      {host_path}");
     let _ = writeln!(output, "manifests: {}", dir.display());
     let _ = writeln!(output, "guide:     {}", guide_path.display());
+    let _ = writeln!(
+        output,
+        "routines:  {} ({seeded_count} timestamped JSON playbook(s) synced)",
+        bridge_core::routines::routines_directory().display()
+    );
 
     for browser in &browsers {
         if !ALL_BROWSERS.contains(&browser.as_str()) {

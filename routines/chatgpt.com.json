@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 2,
+  "domain": "chatgpt.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Page ready in ~690 ms via domcontentloaded; deterministic stop-button streaming wait + 35 ms <main> conversation extraction (eliminates blind polling loops and sidebar history truncation)",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 250,
+    "preferredSnapshotFrames": "top",
+    "actionSettleMs": 60,
+    "submitSettleMs": 80,
+    "dynamicDom": true,
+    "directHttpBlocked": true,
+    "directHttpStatus": 403
+  },
+  "notes": [
+    "ChatGPT places its composer form inside contentinfo/form (`textbox \"Chat with ChatGPT\"` + `button \"Send message\"`) and streams tokens while `button[aria-label*='Stop']` / `[data-testid='stop-button']` is visible.",
+    "Use \"draft_prompt\" to stage a prompt safely without sending, \"ask_and_wait\" to submit and deterministically await streaming completion, or \"read_conversation\" (~35 ms) to read turns cleanly."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "draft_prompt": {
+      "name": "draft_prompt",
+      "description": "Fills ChatGPT's composer textbox ('Chat with ChatGPT' / #prompt-textarea) without clicking Send so the user or agent can review first.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "prompt": {
+          "type": "string",
+          "description": "Prompt text to stage in the composer.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{prompt}}",
+            "clear": true,
+            "submit": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#prompt-textarea, textarea[name='prompt-textarea'], form textarea, [contenteditable='true']#prompt-textarea" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        }
+      ]
+    },
+    "ask_and_wait": {
+      "name": "ask_and_wait",
+      "description": "Submits a prompt in ChatGPT, waits deterministically for token streaming to complete (Stop button hidden), and returns the conversation text in outputs.reply.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "prompt": {
+          "type": "string",
+          "description": "Prompt to send to ChatGPT.",
+          "required": true
+        }
+      },
+      "steps": [
+        {
+          "op": "type",
+          "params": {
+            "text": "{{prompt}}",
+            "clear": true,
+            "submit": false,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#prompt-textarea, textarea[name='prompt-textarea'], form textarea" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "click",
+          "params": {
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[data-testid='send-button'], button[aria-label='Send message'], button[aria-label='Send prompt']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "seconds": 0.6,
+            "timeoutSeconds": 5
+          },
+          "optional": true
+        },
+        {
+          "op": "waitFor",
+          "params": {
+            "state": "hidden",
+            "timeoutSeconds": 120,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "button[data-testid='stop-button'], button[aria-label*='Stop']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "reply",
+          "optional": false
+        }
+      ]
+    },
+    "read_conversation": {
+      "name": "read_conversation",
+      "description": "Reads all visible user and assistant turns from <main> (~35 ms) without sidebar chat-history noise.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "conversation",
+          "optional": false
+        }
+      ]
+    },
+    "new_chat": {
+      "name": "new_chat",
+      "description": "Starts a fresh ChatGPT conversation.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "navigate",
+          "params": {
+            "url": "https://chatgpt.com/",
+            "waitUntil": "domcontentloaded"
+          },
+          "optional": false
+        }
+      ]
+    }
+  }
+}

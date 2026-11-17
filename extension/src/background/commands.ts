@@ -749,7 +749,20 @@ export class Commands {
     const deadline = Date.now() + timeout;
     for (;;) {
       const current = await this.registry.requireTab(session, tab.id!);
-      const result = await callFrame<LocatedElements>(current, locator.frameId ?? 0, 'locate', [locator, 2]);
+      let result: LocatedElements | undefined;
+      try {
+        result = await callFrame<LocatedElements>(current, locator.frameId ?? 0, 'locate', [locator, 2]);
+      } catch (err) {
+        if (
+          err instanceof BridgeError &&
+          (err.code === 'not_ready' || err.code === 'script_error') &&
+          Date.now() < deadline
+        ) {
+          await sleep(Math.min(100, Math.max(1, deadline - Date.now())));
+          continue;
+        }
+        throw err;
+      }
       if (result.count > 1) throw new BridgeError('strict_locator', `Locator matched ${result.count} elements. Refine it or use nth/first/last.`);
       const el = result.elements[0];
       if (el && (readiness === 'attached' || (el.visible && (readiness === 'visible' || (el.enabled && (readiness !== 'editable' || el.editable)))))) {
@@ -854,8 +867,20 @@ export class Commands {
     return { tabId: tab.id, ...result };
   }
 
-  private async finishAction(tab: chrome.tabs.Tab, watch: ReturnType<typeof watchNavigation>, startMs: number, partial: Partial<ActionResult>, session: string): Promise<ActionResult> {
-    const nav = await watch.wait(startMs, 15_000);
+  private async finishAction(
+    tab: chrome.tabs.Tab,
+    watch: ReturnType<typeof watchNavigation>,
+    startMs: number,
+    partial: Partial<ActionResult>,
+    session: string,
+    prof?: SiteRuntimeProfile,
+  ): Promise<ActionResult> {
+    const nav = await watch.wait(
+      startMs,
+      15_000,
+      prof?.preferredWaitUntil ?? 'load',
+      prof?.serviceWorkerNavigation ? 25 : 200,
+    );
     const opened = watch.openedTabs();
     for (const id of opened) this.registry.grant(id, 'agent', session);
     const after = await api.tabs.get(tab.id!).catch(() => tab);
@@ -902,6 +927,7 @@ export class Commands {
         settleMs,
         { input, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
         session,
+        prof,
       );
     } finally {
       watch.dispose();
@@ -988,6 +1014,7 @@ export class Commands {
           ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}),
         },
         session,
+        prof,
       );
     } finally {
       watch.dispose();
@@ -1063,6 +1090,7 @@ export class Commands {
         settleMs,
         { input, value, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
         session,
+        prof,
       );
     } finally {
       watch.dispose();
@@ -1100,13 +1128,14 @@ export class Commands {
   private async select(session: string, params: Params) {
     const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     this.registry.requireTabWrite(tab.id!, 'page.select');
+    const prof = siteProfile(params);
     const { frameId, local } = parseRef((await this.targetRef(session, tab, params, 'enabled'))!);
     const values = Array.isArray(params.values) ? params.values.map(String) : typeof params.values === 'string' ? [params.values] : [];
     if (!values.length) throw new BridgeError('bad_request', 'values must contain at least one option value or label.');
     const watch = watchNavigation(tab.id!);
     try {
       const { selected } = await callFrame<{ selected: string[] }>(tab, frameId, 'select', [local, values]);
-      return await this.finishAction(tab, watch, 80, { selected }, session);
+      return await this.finishAction(tab, watch, prof.actionSettleMs ?? 80, { selected }, session, prof);
     } finally {
       watch.dispose();
     }
@@ -1156,6 +1185,7 @@ export class Commands {
         settleMs,
         { input, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
         session,
+        prof,
       );
     } finally {
       watch.dispose();
@@ -1338,15 +1368,21 @@ export class Commands {
     if (action === 'status') {
       return { handoffs: listActiveHandoffs() };
     }
-    const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     if (action === 'resolve' || action === 'continue' || action === 'cancel') {
+      const explicitId = num(params, 'tabId');
+      const tab =
+        explicitId !== undefined && isTabWaitingHandoff(explicitId)
+          ? await api.tabs.get(explicitId).catch(() => undefined)
+          : await this.registry.resolveTab(session, explicitId);
+      if (!tab?.id) throw new BridgeError('no_tab', 'Target tab for handoff resolution does not exist.');
       const outcome = action === 'cancel' ? 'cancel' : 'continue';
-      const resolvedId = resolveHandoffWait({ tabId: tab.id! }, outcome);
+      const resolvedId = resolveHandoffWait({ tabId: tab.id }, outcome);
       await callFrame(tab, 0, 'hideHandoffCard').catch(() => undefined);
-      await this.registry.applyBadge(tab.id!);
+      await this.registry.applyBadge(tab.id);
       return { tabId: tab.id, resolved: resolvedId !== null, action: outcome };
     }
 
+    const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     const message =
       str(params, 'message') ??
       'Please complete the login, 2FA, or verification step in this tab, then click Continue.';
@@ -1391,27 +1427,34 @@ export class Commands {
     if (action === 'status') {
       return { demonstrations: listActiveDemonstrations() };
     }
-    const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     if (action === 'finish' || action === 'stop' || action === 'cancel') {
+      const explicitId = num(params, 'tabId');
+      const tab =
+        explicitId !== undefined && isTabWaitingHandoff(explicitId)
+          ? await api.tabs.get(explicitId).catch(() => undefined)
+          : await this.registry.resolveTab(session, explicitId);
+      if (!tab?.id) throw new BridgeError('no_tab', 'Target tab for demonstration does not exist.');
       const stopped = await callFrame<{ stopped: boolean; steps: Array<{ op: string; params: Record<string, unknown> }> }>(
         tab,
         0,
         'stopDemoRecorder',
       ).catch(() => ({ stopped: true, steps: [] }));
       const resolved = resolveDemonstrationWait(
-        { tabId: tab.id! },
+        { tabId: tab.id },
         action === 'cancel' ? 'cancel' : 'finish',
         stopped.steps,
       );
-      await this.registry.applyBadge(tab.id!);
+      await this.registry.applyBadge(tab.id);
       return {
         tabId: tab.id,
+        url: tabUrl(tab),
         completed: action !== 'cancel',
         action: action === 'cancel' ? 'cancel' : 'finish',
         steps: resolved?.steps ?? stopped.steps,
       };
     }
 
+    const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     this.registry.requireTabWrite(tab.id!, 'page.demonstrate');
     const instruction =
       str(params, 'instruction') ??
@@ -1431,7 +1474,7 @@ export class Commands {
     const loc = resolveLocale(settings().locale);
     const finishLabel = loc.startsWith('zh') ? '完成并保存' : loc === 'ja' ? '完了して保存' : 'Finish & Save';
     const cancelLabel = loc.startsWith('zh') ? '取消' : loc === 'ja' ? 'キャンセル' : 'Cancel';
-    const _unusedI18n = extMessages; // keep shared bundle reference clean
+    const _unusedI18n = extMessages;
     void _unusedI18n;
 
     const { id, promise } = startDemonstrationWait(tab.id!, session, origin, instruction, timeoutMs, false, () => {
@@ -1439,6 +1482,13 @@ export class Commands {
       this.registry.onChange();
     });
     await callFrame(tab, 0, 'startDemoRecorder', [{ id, instruction, finishLabel, cancelLabel }]);
+    if (action === 'start') {
+      void promise.then(async () => {
+        await callFrame(tab, 0, 'stopDemoRecorder').catch(() => undefined);
+        await this.registry.applyBadge(tab.id!);
+      });
+      return { tabId: tab.id, id, started: true };
+    }
     const outcome = await promise;
     await callFrame(tab, 0, 'stopDemoRecorder').catch(() => undefined);
     await this.registry.applyBadge(tab.id!);

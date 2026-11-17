@@ -29,7 +29,7 @@ const RULES = [
   { id: 'personal-handle', re: new RegExp(['ma' + 'luo', 'max' + 'luo', 'dc' + 'luo(?!max)'].join('|'), 'i') },
   { id: 'corporate-email', re: new RegExp('max\\.luo@' + 'microsoft\\.com', 'i') },
   { id: 'corporate-npm-feed', re: /pkgs\.visualstudio\.com|packagefeedproxy\.microsoft\.io|pkgs\.dev\.azure\.com/i },
-  { id: 'personal-onedrive-or-converter', re: /OneDrive[\\/]+Tools|musescore_to_pdf|WebsiteTools/i },
+  { id: 'personal-onedrive-or-converter', re: /OneDrive[\\/]+Tools|musescore_to_pdf|WebsiteTools|website-tools|website_tools/i },
   { id: 'legacy-extension-id', re: /dmgaljkjepliflkkgpinpkemobomldlf/i },
   { id: 'live-instance-leak', re: /c4226b8c9535|5681b8ee1af5/i },
   { id: 'private-key-material', re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },

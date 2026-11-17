@@ -69,7 +69,7 @@ async function executeWithRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-const EXPECTED_CONTENT_VERSION = '0.7.0';
+const EXPECTED_CONTENT_VERSION = '0.10.0';
 
 /** Runs inside the page (isolated world). Must be self-contained: it is serialized by the browser. */
 function invokeContent(method: string, args: unknown[], expectedVersion: string): { ok?: unknown; err?: string; missing?: boolean } {

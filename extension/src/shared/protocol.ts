@@ -83,11 +83,27 @@ export interface SavedScreenshotMessage {
   error?: string;
 }
 
+/** Extension -> host: persist a user-demonstrated Routine directly into Site Memory. */
+export interface SaveDemonstratedRoutineMessage {
+  type: 'saveDemonstratedRoutine';
+  url: string;
+  name: string;
+  description: string;
+  steps: Array<{ op: string; params: Record<string, unknown> }>;
+}
+
 export type HostToExtension = HostHelloMessage | SessionMessage | RequestMessage | SavedScreenshotMessage;
-export type ExtensionToHost = HelloMessage | ResponseMessage | EventMessage | SaveScreenshotMessage;
+export type ExtensionToHost =
+  | HelloMessage
+  | ResponseMessage
+  | EventMessage
+  | SaveScreenshotMessage
+  | SaveDemonstratedRoutineMessage;
 
 export class BridgeError extends Error {
-  constructor(public readonly code: string, message: string) {
+  readonly code: string;
+  constructor(code: string, message: string) {
     super(message);
+    this.code = code;
   }
 }

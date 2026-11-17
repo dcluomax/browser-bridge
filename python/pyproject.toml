@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "browser-bridge"
-version = "0.7.0"
+version = "0.10.0"
 description = "Zero-dependency local Python SDK for Browser Bridge (control your own signed-in Edge, Chrome, or Firefox tabs)"
 readme = "README.md"
 license = { text = "MIT" }

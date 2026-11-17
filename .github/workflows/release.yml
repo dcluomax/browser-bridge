@@ -56,7 +56,8 @@ jobs:
         run: |
           mkdir -p stage dist-host
           cp "rust/target/${{ matrix.target }}/release/${{ matrix.bin }}" stage/
-          cp README.md LICENSE docs/AGENT.md stage/
+          cp README.md CHANGELOG.md LICENSE docs/AGENT.md stage/
+          cp -R routines stage/routines
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             (cd stage && 7z a "../dist-host/browser-bridge-${{ matrix.label }}.zip" .)
           else

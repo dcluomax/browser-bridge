@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "domain": "stackoverflow.com",
+  "verifiedAt": "2026-11-17T09:45:00Z",
+  "updatedAt": "2026-11-17T09:45:00Z",
+  "updatedAtEpochS": 1794908700,
+  "speedupSummary": "Auto-dismisses #onetrust-banner-sdk blocker + 1,200-char <pre><code> preservation + ~60 ms #mainbar Q&A extraction",
+  "accessProfile": {
+    "preferredWaitUntil": "domcontentloaded",
+    "preferredSnapshotFrames": "top",
+    "knownBlockers": ["<div#onetrust-banner-sdk>"]
+  },
+  "notes": [
+    "Stack Overflow / Stack Exchange displays an #onetrust-banner-sdk cookie banner on first visit; routines dismiss it automatically.",
+    "Use \"read_qa\" to read the full question, answers, and complete <pre><code> blocks from #mainbar."
+  ],
+  "pitfalls": [],
+  "routines": {
+    "dismiss_cookies": {
+      "name": "dismiss_cookies",
+      "description": "Dismisses the OneTrust cookie banner if visible.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 700,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#onetrust-accept-btn-handler, #onetrust-reject-all-handler, .js-accept-cookies" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        }
+      ]
+    },
+    "search_questions": {
+      "name": "search_questions",
+      "description": "Dismisses optional cookie banner, searches Stack Overflow, and snapshots matching questions.",
+      "readOnly": false,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {
+        "query": { "type": "string", "description": "Technical search query.", "required": true }
+      },
+      "steps": [
+        {
+          "op": "click",
+          "params": {
+            "timeoutMs": 500,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#onetrust-accept-btn-handler, .js-accept-cookies" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "type",
+          "params": {
+            "text": "{{query}}",
+            "clear": true,
+            "submit": true,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "input[name='q']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": false
+        },
+        {
+          "op": "snapshot",
+          "params": { "maxChars": 18000 },
+          "saveAs": "results",
+          "optional": false
+        }
+      ]
+    },
+    "read_qa": {
+      "name": "read_qa",
+      "description": "Extracts the question, accepted/top answers, and code snippets from #mainbar.",
+      "readOnly": true,
+      "verifiedAt": "2026-11-17T09:45:00Z",
+      "updatedAt": "2026-11-17T09:45:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "query",
+          "params": {
+            "operation": "innerText",
+            "maxChars": 60000,
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "#mainbar, main" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "saveAs": "qa",
+          "optional": false
+        }
+      ]
+    }
+  }
+}
