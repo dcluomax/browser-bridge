@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "pypi.org",
-  "verifiedAt": "2026-11-17T17:55:00Z",
-  "updatedAt": "2026-11-17T17:55:00Z",
-  "updatedAtEpochS": 1794938100,
-  "speedupSummary": "Package page navigation + snapshot: 9,097 ms (external badge/ad script stall) -> ~610 ms (14.9x faster via commit + hydrationSettleMs); ~40 ms #description documentation read",
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
+  "speedupSummary": "Package page navigation + snapshot: 9,097 ms (external badge/ad script stall) -> ~480 ms (18.9x faster via domcontentloaded + readinessSelector); ~40 ms #description documentation read",
   "accessProfile": {
-    "preferredWaitUntil": "commit",
-    "hydrationSettleMs": 350,
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 120,
+    "readinessQuietMs": 60,
+    "readinessSelector": "main, .package-description, #content",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

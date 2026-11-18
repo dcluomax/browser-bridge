@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "arxiv.org",
-  "verifiedAt": "2026-11-17T17:35:00Z",
-  "updatedAt": "2026-11-17T17:35:00Z",
-  "updatedAtEpochS": 1794936900,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Paper abstract open + snapshot: 10,682 ms -> ~550 ms (19.4x faster via domcontentloaded + top-frame MathJax/iframe skip); 1-call jump to /html/{{url.arxivId}} full-text HTML edition",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 60,
+    "readinessSelector": "#abs, #content, .ltx_page_main, main",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

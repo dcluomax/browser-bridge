@@ -18,6 +18,8 @@ The user shared a live, logged-in browser tab with you (`tab <TAB_ID>` in `<BROW
 3. Interact (`[read-write]` only — pass `tabId` + `ref` or `locator`):
    - `browser_click`, `browser_drag`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_set_checked`
    - `browser_press_key`, `browser_scroll`, `browser_upload_file`, `browser_handle_dialog`, `browser_wait_for`
+   - **Multi-Step Batch (`browser_batch`)**: execute repeated combobox searches, multi-control form setups, or chained reads in **1 single call** inside your active tab lease (`steps: [{ op, params, saveAs, optional }, ...]`), avoiding 10+ LLM roundtrips!
+   - **Auto-Routine Learning**: Browser Bridge automatically distills completed multi-step workflows (stripping failed detours, promoting `ref`s to semantic `locator`s, and scrubbing secrets) into `[auto]` routines in Site Memory; element `ref`s stay stable across `locate`/`snapshot` and self-heal across same-URL SPA re-renders.
    - **Handoff & Demonstrate**: call `browser_handoff` when login, 2FA, CAPTCHA/Cloudflare, or payment is needed (pops a Continue card with `WAIT` badge); call `browser_demonstrate({ "saveAs": "..." })` to record a user demonstration directly into a reusable Site Routine!
    - **Domain Fence & Diagnostics**: use `browser_allowlist` to fence tabs to `allowedOrigins`; inspect redacted HTTP exchanges with `browser_network` and JS errors with `browser_console`.
    - After discovering a faster workflow or pitfall workaround on a site, persist it via `browser_routine_save` so future tasks skip detours!

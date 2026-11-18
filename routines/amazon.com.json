@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "amazon.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Soft-gate bypass + product search: 16,043 ms -> 2,491 ms (6.4x faster via domcontentloaded + top-frame ad-iframe skip)",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 60,
+    "readinessSelector": "#search, #ppd, #twotabsearchtextbox, main",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

@@ -11,6 +11,24 @@ See **[`docs/VERSIONING.md`](docs/VERSIONING.md)** for the formal SemVer & Site-
 
 For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)**.
 
+## [0.11.0] - 2026-11-18
+
+### Upgrade Notes (`0.10.1` → `0.11.0`)
+- **Minor Version Upgrade (`0.11.0` — Quality-Constrained `SiteLearner` v2, Event-Driven DOM Readiness, Auto-Routine Synthesis & `browser_batch`)**: Re-run the installer (`.\scripts\install.ps1` / `./scripts/install.sh`), reinstall the Python SDK if used (`pip install ./python`), and click **Reload (`↻`)** once on the **Browser Bridge** extension card (`edge://extensions` / `chrome://extensions`).
+
+### Added & Upgraded in `0.11.0`
+1. **Quality-Constrained `SiteLearner` v2 (`P0`–`P3` Redesign)**:
+   - **Strict Credit Assignment & `_noLearn` Benchmark Isolation**: Strips `_noLearn` and records caller `_siteProfile`, `waitUntil`, and `frames` overrides so synthetic baseline probes never train or drift live site profiles.
+   - **Ordered Wait Modes (`commit < domcontentloaded < load`), `k >= 3` Thresholds, Settle Decay & 7-Day TTL**: Eliminates 1-shot policy flips, prevents load timeouts from overwriting faster `commit` profiles, ignores caller `stale_ref` errors for hydration settle, decays `hydrationSettleMs` after 5 consecutive clean navigations, and expires stale learned overrides after 7 days.
+   - **Route-Scoped Quality-Constrained Bandit (`RouteBandit`)**: Tracks per-route (`normalize_route_template`) `p50`/`p95` latency, success rate, and content size across candidate readiness arms, enforcing a `>= 85%` reference content-completeness guardrail on idempotent reads with automatic safe-arm fallback.
+   - **Field-Level Provenance (`seed` / `learned` / `user`) & Semantic Relocation Auto-Repair**: Preserves `user` overrides across SemVer `PATCH` merges while refreshing aged `learned` drift, and auto-relocates broken read-only selectors via semantic landmarks with post-condition checks.
+2. **Event-Driven DOM Readiness Predicate (`waitForDomQuiet`)**:
+   - Replaces blind fixed `sleep(hydrationSettleMs)` in `commands.ts` with a `MutationObserver` quiet-window and CSS landmark readiness check (`readinessSelector`, `readinessQuietMs`) in `content.ts`, treating `hydrationSettleMs` strictly as an upper cap and reporting `settledMs`, `settleReason`, `contentChars`, and `mainChars` telemetry.
+3. **`PATCH` Release Gate (`scripts/check-routine-gate.py`) & Isolated Interleaved Benchmarks (`scripts/benchmark-sites.py`)**:
+   - Enforces `schemaVersion: 2` hygiene plus `N >= 20` interleaved frozen-profile `p50`/`p95` and `>= 80%` content-completeness gates on `routines/*.json` updates.
+4. **Automatic Trajectory Distillation (`Auto-Routine`), `browser_batch` / `Page.batch(...)` & Self-Healing Same-URL `ref`s**:
+   - Distills completed multi-step workflows into `[auto]` routines with secret scrubbing, executes 1–100 step batches in a single lease roundtrip, and self-heals SPA-rerendered `ref`s on the same URL.
+
 ## [0.10.1] - 2026-11-17
 
 ### Upgrade Notes (`0.10.0` / `0.7.0` → `0.10.1`)

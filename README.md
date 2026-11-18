@@ -5,14 +5,14 @@
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
-[![Release v0.10.1](https://img.shields.io/badge/Release-v0.10.1-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
+[![Release v0.11.0](https://img.shields.io/badge/Release-v0.11.0-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
 [![100% Local](https://img.shields.io/badge/100%25%20Local-0%20Cloud%20Relay-0284c7)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Zero-Port Secure](https://img.shields.io/badge/Secure-0%20TCP%20Ports%20%7C%203--Layer%20ACL-059669)](docs/SECURITY_MODEL.md)
 [![Native Fast](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20Pipe%20IPC-d97706)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Self-Evolving](https://img.shields.io/badge/Website%20Optimizations-24%20Site%20JSONs%20%7C%20Up%20to%201800x%20Faster-6366f1)](#website-optimizations)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
 
-**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.10.1)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.11.0)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -31,7 +31,7 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or cloud brows
 | **1. 100% LOCAL** | Runs strictly on your machine inside your daily browser — zero cloud relays, zero remote containers, zero WebDriver downloads | Instant access to your live corporate SSO, MFA sessions, cookies, and extensions with zero re-login friction |
 | **2. ZERO-PORT SECURE** | **0 open TCP/WebSocket ports**; OS-authenticated Windows SID Named Pipes (`CurrentUserOnly`) & `0700`/`0600` Unix sockets + **3-layer Read-Only / Read-Write ACLs** + password/JWT redaction | Web pages and other OS users cannot reach the bridge; unshared personal tabs remain completely invisible |
 | **3. NATIVE FAST** | **~1.5 MB standalone Rust binary** (~8 MB RAM), **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM content engine, background focus-free screenshots, and 0-dependency Python SDK | Sub-millisecond local IPC with zero Node/Python driver bloat or browser startup overhead |
-| **4. SELF-EVOLVING** | **24 timestamped `routines/*.json` playbooks** (`schemaVersion: 2`, `PATCH 0.10.Z` auto-merge, `[STALE]` drift guard) + **`SiteLearner`** + **`browser_demonstrate`** + W3C **WebMCP** | **15×–1,800× network-excluded engine speedups** across Perplexity, Medium, Google Sheets/Docs/Search, GitHub, ChatGPT, Claude, arXiv, PyPI, LinkedIn & Gmail |
+| **4. SELF-EVOLVING** | **Zero-config engine mitigations** + **quality-constrained `SiteLearner` v2** (`waitForDomQuiet` DOM readiness, content-completeness floor) + **24 timestamped `routines/*.json`** (`schemaVersion: 2`, `PATCH` `N=20` gate, semantic relocation & `[STALE]` guard) + **`browser_demonstrate`** + W3C **WebMCP** | Eliminates multi-second post-network stalls (up to **15×–1,800×** on stalled third-party/SSE baselines) while enforcing **`>= 80–85%` content completeness** so fast reads never return unhydrated shells |
 
 ### Headless Drivers vs. Browser Bridge
 
@@ -54,7 +54,11 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or cloud brows
 
 Generic browser drivers waste **8–30 seconds per page** waiting on things that have **nothing to do with network bandwidth**: open SSE/WebSocket streams blocking Chromium MV3 `document_idle` (`perplexity.ai`), hung 3rd-party Google One-Tap / ad iframes (`medium.com`, `amazon.com`), stalled analytics beacons (`google.com`, `pypi.org`), chained `3xx`/client redirects (`linkedin.com`, `mail.google.com`), opaque `<canvas>` surfaces (`Google Docs`, `Google Sheets`), and 200-link navigation headers truncating `<main>` (`github.com`).
 
-Browser Bridge `v0.10.1` eliminates those bottlenecks at the engine level (`injectImmediately: true`, multi-hop redirect tracking, `1,500 ms` child-frame cap, native Kix `<canvas>` & `#t-name-box` readers, smart `<main>` budgeting) and ships **24 git-tracked, timestamped `schemaVersion: 2` site optimization JSONs** in [`routines/*.json`](routines/).
+Browser Bridge eliminates those bottlenecks across **three distinct, independently verifiable layers**:
+
+1. **Layer 1 — Zero-Config Engine Mitigations** (`injectImmediately: true`, multi-hop `watchNavigation` redirect tracking, `1,500 ms` child-frame timeout cap, native Kix `<canvas>` & `#t-name-box` readers, and smart `<main>` compaction) — delivers the baseline zero-config speedup across websites with zero site-specific rules.
+2. **Layer 2 — Event-Driven DOM Readiness & Quality-Constrained `SiteLearner` v2** — replaces blind post-navigation `sleep()` timers with an in-page `MutationObserver` quiet-window and landmark predicate (`waitForDomQuiet`, treating `hydrationSettleMs` strictly as an upper cap), enforces totally ordered wait levels (`commit < domcontentloaded < load`), requires `k >= 3` consistent observations before switching policies, decays settle caps on clean navigation streaks, gates route-scoped arm selection on a **`>= 85%` reference content-completeness floor** (so "fast" reads never return unhydrated empty shells), and isolates benchmark probes via `_noLearn: true`.
+3. **Layer 3 — Timestamped `routines/*.json` Playbooks (24 Sites)** — git-tracked `schemaVersion: 2` 1-call structured fast paths in [`routines/*.json`](routines/) with semantic locator auto-repair, graceful top-frame snapshot fallback, field-level provenance merging (`seed` / `learned` / `user`), and `[STALE]` redesign drift detection.
 
 ### Network-Excluded Benchmark Methodology (`Excl. Network` & `0-Net`)
 
@@ -80,13 +84,17 @@ To prevent ISP or Wi-Fi variance from distorting benchmarks, Browser Bridge expo
 | **ChatGPT & Claude**<br>[`chatgpt.com.json`](routines/chatgpt.com.json) · [`claude.ai.json`](routines/claude.ai.json) | Clipped `contentinfo`/ProseMirror composer + fixed `5–15 s` sleep loops | Clipped input + `5,000–15,000 ms` blind sleeps | **`~200–350 ms`** ready | **`35–37 ms`** read · **`117 ms`** `draft_prompt` · Stop-btn wait | **Deterministic (0 blind sleep)** |
 | **Reddit, X, draw.io, Wikipedia, HN, SO & YouTube**<br>7 timestamped playbooks in [`routines/`](routines/) | `shreddit-*` virtualization, `#fragment` `30 s` SW timeout, `border=0` layout tables, `#cite_note` bloat, OneTrust banners, Polymer stall | `8,000–30,000 ms` stalls or truncated output | **`~250–650 ms`** post-net | **`5 ms`** X · **`32 ms`** HN (30/30) · **`52 ms`** Wiki (35k chars) · **`99 ms`** Reddit JSON · **`660 ms`** draw.io XML | **Zero timeouts / 0 truncation** |
 
-> Reproduce on your own machine & network anytime: `PYTHONPATH=python python scripts/benchmark-sites.py --compare-unoptimized`
+> **Methodology & Statistical Rigor Note**: Live production websites exhibit substantial cross-session and geographic variance — for example, third-party authentication/ad iframes (such as Medium's Google One-Tap widget or Yahoo Finance ad slots) can resolve in `<1 s` on warm sessions yet stall `load + allFrames` for `12–23 s+` on cold or throttled sessions. Single-pass numbers above illustrate peak stall elimination on affected sessions; rigorous evaluation uses **multi-trial interleaved frozen-profile (`_noLearn: true`) benchmarking** reporting **`p50 / p95` post-network latency** alongside a mandatory **`>= 80%` content-completeness guardrail** so unhydrated skeletons are never counted as speedups:
+>
+> ```bash
+> PYTHONPATH=python python scripts/benchmark-sites.py --compare-unoptimized --trials 5 --interleave
+> ```
 
-### Timestamped Auto-Upgrade, `[STALE]` Drift Guard & `PATCH` (`0.10.Z`) Versioning Policy
+### Timestamped Auto-Upgrade, `[STALE]` Drift Guard & `PATCH` (`0.10.Z`) Empirical Release Gate
 
-- **3rd-Digit (`PATCH`, `0.10.Z`) Website-Optimization Policy ([`docs/VERSIONING.md`](docs/VERSIONING.md))** — Optimizing websites, adding new `routines/*.json` playbooks, or refreshing selectors after a site redesign always increments the **3rd SemVer digit (`PATCH`, e.g. `0.10.0` → `0.10.1`)** and stamps fresh ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps (`MINOR` `0.Y.0` is reserved for new engine/MCP/SDK features; `MAJOR` `X.0.0` for wire-protocol changes).
-- **Non-Destructive Upgrade Merge (`seed.verifiedAt >= disk.updatedAt`)** — Upgrading Browser Bridge automatically refreshes outdated built-in routines and `accessProfile` latency parameters in `%LOCALAPPDATA%\BrowserBridge\routines\` (`~/.browser-bridge/routines/`) while preserving all custom user routines, learned pitfalls, and domain notes — see **[Upgrade Notes (`docs/UPGRADE.md`)](docs/UPGRADE.md)**.
-- **Automatic Redesign Drift Detection (`[STALE]`)** — If a live website UI change causes `>= 2` consecutive selector or timeout failures on a routine, Browser Bridge flags it `[STALE]` with `staleReason` so agents inspect a fresh `browser_snapshot` and hot-update via `browser_routine_save`.
+- **3rd-Digit (`PATCH`, `0.10.Z`) Empirical Release Gate ([`docs/VERSIONING.md`](docs/VERSIONING.md))** — Optimizing websites, adding new `routines/*.json` playbooks, or refreshing selectors after a site redesign always increments the **3rd SemVer digit (`PATCH`, e.g. `0.10.0` → `0.10.1`)**, stamps fresh ISO-8601 UTC `verifiedAt`/`updatedAt` timestamps, and validates `scripts/check-routine-gate.py` (`schemaVersion: 2` hygiene + `N >= 20` interleaved `_noLearn: true` trials confirming `p50`/`p95` non-regression and `>= 80%` content completeness vs. `load`; `MINOR` `0.Y.0` is reserved for new engine/MCP/SDK features; `MAJOR` `X.0.0` for wire-protocol changes).
+- **Field-Level Provenance Merge (`seed` / `learned` / `user`)** — Upgrading Browser Bridge refreshes outdated `seed` routines and regressed/expired `learned` latency fields (`seed.verifiedAt >= disk.updatedAt`) in `%LOCALAPPDATA%\BrowserBridge\routines\` (`~/.browser-bridge/routines/`) while strictly preserving `user`-authored overrides, custom routines, and domain notes — see **[Upgrade Notes (`docs/UPGRADE.md`)](docs/UPGRADE.md)**.
+- **Semantic Relocation & Automatic Redesign Drift Guard (`[STALE]`)** — If a live website UI change breaks a routine selector, Browser Bridge attempts semantic ARIA/landmark relocation and falls back gracefully to a safe top-frame snapshot; `>= 2` consecutive misses flag the routine `[STALE]` with `staleReason` so agents inspect a fresh `browser_snapshot` and hot-update via `browser_routine_save`.
 - **Rich Routine Engine v2** — Supports path-scoped multi-app hosts (`docs.google.com/document` vs `docs.google.com/spreadsheets`), friendly aliases (`google-docs`, `google-sheets`, `google-excel`, `gmail`, `chatgpt`, `claude`, `perplexity`, `notion`, `hf`, `npm`, `pypi`, `arxiv`, `linkedin`, `medium`, `drawio`, `hn`), in-tab `op: "fetch"` (`stripHtml`), `{{param:urlencode}}`, and live URL variables (`{{url.docId}}`, `{{url.gid}}`, `{{url.repo}}`, `{{url.arxivId}}`, `{{url.cleanPath}}`, `{{url.origin}}`).
 
 ---
@@ -218,9 +226,9 @@ Additional popup & runtime capabilities:
 
 ---
 
-## Self-Evolving `SiteLearner` & Native W3C WebMCP
+## Self-Evolving `SiteLearner` v2 & Native W3C WebMCP
 
-- **Error-Driven `SiteLearner` for Long-Tail Sites** — Even on internal dashboards or websites outside the 24 built-in [`routines/*.json`](routines/) playbooks, Browser Bridge observes `load` timeouts → switches future visits to `domcontentloaded`; detects hydration `stale_ref` races → tunes `hydrationSettleMs`; records `Error -> Recovery Action -> Retry Success` triads for overlay blockers; and remembers `403` WAF endpoints so `smart_fetch` routes through the authenticated browser tab.
+- **Quality-Constrained `SiteLearner` v2 for Long-Tail Sites** — Even on internal dashboards or websites outside the 24 built-in [`routines/*.json`](routines/) playbooks, Browser Bridge tunes per-route readiness using a quality-constrained bandit over ordered wait modes (`commit < domcontentloaded < load`) and event-driven DOM quietness (`waitForDomQuiet`, capping settle waits via `MutationObserver` rather than blind `sleep()` timers): it requires `k >= 3` observations before policy shifts, enforces a `>= 85%` content-completeness floor with automatic safe-arm fallback, decays `hydrationSettleMs` caps on clean navigation streaks, honors `_noLearn` probe isolation, records `Error -> Recovery Action -> Retry Success` triads for overlay blockers, and remembers `403` WAF endpoints for `smart_fetch`.
 - **Native W3C WebMCP (`document.modelContext`)** — Automatically discovers imperative tools registered via `document.modelContext.registerTool(...)` / `navigator.modelContext.registerTool(...)` and declarative `<form toolname="...">` actions across Edge, Chrome, and Firefox (`browser_webmcp_list` / `browser_webmcp_call`).
 
 ---
@@ -273,7 +281,7 @@ Read the complete **[Python SDK & Direct IPC Reference](python/README.md)** and 
 | Document | Contents |
 | --- | --- |
 | **[docs/INSTALL.md](docs/INSTALL.md)** | AI Agent 1-Prompt installation playbook (zero-build SHA-256 prebuilt release setup) |
-| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.7.0` / `v0.10.0` → `v0.10.1` Upgrade Notes, timestamped `routines/*.json` auto-merge & `[STALE]` drift guard |
+| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.10.x` → `v0.11.0` Upgrade Notes (`SiteLearner` v2, `waitForDomQuiet`, `browser_batch`, Auto-Routines & 24 site playbooks) |
 | **[docs/VERSIONING.md](docs/VERSIONING.md)** | SemVer & Site-Optimization Update Spec (**website JSON updates bump 3rd `PATCH` digit `0.10.Z`**) |
 | **[CHANGELOG.md](CHANGELOG.md)** | Full release history and measured network-excluded per-site speedup benchmarks |
 | **[llms.txt](llms.txt)** | Machine-readable repository index for LLM coding agents |

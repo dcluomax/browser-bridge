@@ -166,3 +166,6 @@ test('PWA service-worker navigation completes with status=null when no webReques
     watcher.dispose();
   }
 });
+
+import './readiness.test.mjs';
+

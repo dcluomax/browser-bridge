@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "stackoverflow.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Auto-dismisses #onetrust-banner-sdk blocker + 1,200-char <pre><code> preservation + ~60 ms #mainbar Q&A extraction",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 60,
+    "readinessSelector": "#mainbar, #question-header, main",
     "preferredSnapshotFrames": "top",
     "knownBlockers": ["<div#onetrust-banner-sdk>"]
   },

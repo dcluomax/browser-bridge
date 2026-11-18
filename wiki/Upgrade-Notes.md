@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` / `v0.10.0` → `v0.10.1`)
+# Upgrade Notes (`v0.7.0` / `v0.10.x` → `v0.11.0`)
 
-**Browser Bridge `v0.10.1`** expands the timestamped `schemaVersion: 2` site optimization catalog to **24 built-in playbooks (`routines/*.json`)**, formalizes the **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Policy** ([[Versioning and Site JSON Policy]]), adds Chromium MV3 `injectImmediately: true` + multi-hop redirect tracking + `1,500 ms` child-frame bounds delivering **15×–1,800× network-excluded speedups**, and retains all `0.10.0` additions (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`, collapsed `[Agent]` background tab groups).
+**Browser Bridge `v0.11.0`** introduces **Quality-Constrained `SiteLearner` v2** (route-scoped `>= 85%` content-completeness bandit, ordered wait modes, `k >= 3` hysteresis, clean-streak settle decay, `_noLearn` benchmark isolation, field provenance, and semantic relocation auto-repair), **Event-Driven DOM Readiness (`waitForDomQuiet`)**, **`browser_batch` / `Page.batch(...)`**, **Auto-Routine Trajectory Distillation**, a **streamlined Astryx Popup UI**, and the **`N >= 20` `PATCH` Release Gate (`scripts/check-routine-gate.py`)** alongside **24 built-in timestamped playbooks (`routines/*.json`)**.
 
 ---
 

@@ -127,7 +127,7 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
             let mut clean_res = msg.get("result").cloned();
             let err_ref = msg.get("error");
 
-            let (tx, client_id, to_persist) = {
+            let (tx, client_id, persists) = {
                 let mut guard = state.lock().await;
                 let Some(pending) = guard.pending.remove(req_id) else {
                     return;
@@ -138,20 +138,28 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
                     clean_res.as_mut(),
                     err_ref,
                 );
+                let mut persists = guard.learner.take_extra_persists();
+                if let Some(pb) = to_persist {
+                    persists.push(pb);
+                }
                 let Some(session) = guard.sessions.get(&pending.prepared.session_id) else {
-                    if let Some(pb) = to_persist {
+                    if !persists.is_empty() {
                         tokio::task::spawn_blocking(move || {
-                            let _ = bridge_core::routines::save_playbook(&pb);
+                            for pb in persists {
+                                let _ = bridge_core::routines::save_playbook(&pb);
+                            }
                         });
                     }
                     return;
                 };
-                (session.tx.clone(), pending.client_id, to_persist)
+                (session.tx.clone(), pending.client_id, persists)
             };
 
-            if let Some(pb) = to_persist {
+            if !persists.is_empty() {
                 tokio::task::spawn_blocking(move || {
-                    let _ = bridge_core::routines::save_playbook(&pb);
+                    for pb in persists {
+                        let _ = bridge_core::routines::save_playbook(&pb);
+                    }
                 });
             }
 
@@ -339,10 +347,20 @@ where
 
                 // Host-native Site Memory & Adaptive Access Profile RPCs (0.05 ms, no browser extension round-trip)
                 if matches!(method, "site.profile" | "site.save" | "site.recordHttp") {
-                    let (reply, to_persist) = {
+                    let (reply, persists) = {
                         let mut guard = state.lock().await;
                         match method {
                             "site.profile" => {
+                                let force_flush = params
+                                    .get("flushAutoRoutines")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                let min_idle = if force_flush {
+                                    std::time::Duration::ZERO
+                                } else {
+                                    std::time::Duration::from_secs(5)
+                                };
+                                let flushed = guard.learner.flush_idle_trajectories(min_idle);
                                 let tab_id = params.get("tabId").and_then(Value::as_i64);
                                 let domain_opt = params
                                     .get("domain")
@@ -355,7 +373,7 @@ where
                                             .learner
                                             .get_playbook(&dom)
                                             .unwrap_or_else(|| SitePlaybook::new(dom));
-                                        (json!({ "id": client_id, "ok": true, "result": pb }), None)
+                                        (json!({ "id": client_id, "ok": true, "result": pb }), flushed)
                                     }
                                     None => (
                                         json!({
@@ -363,7 +381,7 @@ where
                                             "ok": false,
                                             "error": { "code": "bad_request", "message": "Provide domain or a tabId with a loaded URL." }
                                         }),
-                                        None,
+                                        flushed,
                                     ),
                                 }
                             }
@@ -402,10 +420,10 @@ where
                                     None => None,
                                 };
                                 match guard.learner.upsert_memory(&dom, note, parsed_routine, del, reset) {
-                                    Ok((_, pb)) => (json!({ "id": client_id, "ok": true, "result": pb }), None),
+                                    Ok((_, pb)) => (json!({ "id": client_id, "ok": true, "result": pb }), Vec::new()),
                                     Err(e) => (
                                         json!({ "id": client_id, "ok": false, "error": { "code": "bad_request", "message": e } }),
-                                        None,
+                                        Vec::new(),
                                     ),
                                 }
                             }
@@ -417,13 +435,18 @@ where
                                     .and_then(|s| u16::try_from(s).ok());
                                 let blocked = params.get("blocked").and_then(Value::as_bool).unwrap_or(false);
                                 let persist = guard.learner.record_direct_http(url, status, blocked);
-                                (json!({ "id": client_id, "ok": true, "result": { "recorded": true } }), persist)
+                                (
+                                    json!({ "id": client_id, "ok": true, "result": { "recorded": true } }),
+                                    persist.into_iter().collect(),
+                                )
                             }
                         }
                     };
-                    if let Some(pb) = to_persist {
+                    if !persists.is_empty() {
                         tokio::task::spawn_blocking(move || {
-                            let _ = bridge_core::routines::save_playbook(&pb);
+                            for pb in persists {
+                                let _ = bridge_core::routines::save_playbook(&pb);
+                            }
                         });
                     }
                     let _ = tx.send(format!("{reply}\n")).await;
@@ -468,15 +491,25 @@ where
     }
 
     if opened {
-        let mut guard = state.lock().await;
-        guard.sessions.remove(&session_id);
-        guard.learner.close_session(&session_id);
-        guard.pending.retain(|_, p| p.prepared.session_id != session_id);
-        let _ = guard.ext_tx.send(json!({
-            "type": "session",
-            "event": "close",
-            "session": session_id,
-        }));
+        let persists = {
+            let mut guard = state.lock().await;
+            guard.sessions.remove(&session_id);
+            let flushed = guard.learner.close_session(&session_id);
+            guard.pending.retain(|_, p| p.prepared.session_id != session_id);
+            let _ = guard.ext_tx.send(json!({
+                "type": "session",
+                "event": "close",
+                "session": session_id,
+            }));
+            flushed
+        };
+        if !persists.is_empty() {
+            tokio::task::spawn_blocking(move || {
+                for pb in persists {
+                    let _ = bridge_core::routines::save_playbook(&pb);
+                }
+            });
+        }
     }
     drop(tx);
     writer.abort();

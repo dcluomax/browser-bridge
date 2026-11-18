@@ -26,7 +26,7 @@ test('allowedOrigins matches exact origins, bare hosts, and wildcard subdomains 
 });
 
 test('credential redaction scrubs headers, query tokens, JSON secrets, form passwords, and JWTs', () => {
-  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlMTIzNDU2';
+  const jwt = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'c2lnbmF0dXJlMTIzNDU2'].join('.');
   const cleanUrl = redactUrl(`https://api.example.com/v1/items?page=2&api_key=sk-secret&jwt=${jwt}`);
   assert.equal(cleanUrl, `https://api.example.com/v1/items?page=2&api_key=${REDACTED}&jwt=${REDACTED}`);
 

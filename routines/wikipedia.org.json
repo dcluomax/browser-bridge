@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "wikipedia.org",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Article search + 35k-char clean #mw-content-text extraction in ~2,200 ms; #cite_note anchor compaction saves ~8 KB snapshot budget per article",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 60,
+    "readinessSelector": "#mw-content-text, main",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

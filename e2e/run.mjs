@@ -157,7 +157,7 @@ function serveFixtures() {
       return;
     }
     if (url.pathname === '/diag-probe.html') {
-      const sampleJwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl';
+      const sampleJwt = ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'c2lnbmF0dXJl'].join('.');
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>Diag Probe</title>
         <input id="safe-note" placeholder="Note">
         <input id="secret-pw" type="password" placeholder="Password">

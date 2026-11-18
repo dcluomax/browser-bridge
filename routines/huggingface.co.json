@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "huggingface.co",
-  "verifiedAt": "2026-11-17T17:35:00Z",
-  "updatedAt": "2026-11-17T17:35:00Z",
-  "updatedAtEpochS": 1794936900,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Model/Dataset page ready in ~850 ms (vs 2,971 ms load); full Model Card extraction in ~45 ms without 200+ file/tag header truncation",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
-    "hydrationSettleMs": 150,
+    "hydrationSettleMs": 120,
+    "readinessQuietMs": 60,
+    "readinessSelector": "main, .model-card-content, [role='main']",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

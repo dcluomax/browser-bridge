@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "npmjs.com",
-  "verifiedAt": "2026-11-17T17:35:00Z",
-  "updatedAt": "2026-11-17T17:35:00Z",
-  "updatedAtEpochS": 1794936900,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Skips Cloudflare/analytics child-frame stalls via domcontentloaded + snapshotFrames=top (1,927 ms -> ~15 ms snapshot); ~45 ms #readme package docs extraction",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 60,
+    "readinessSelector": "main, #top, #readme",
     "preferredSnapshotFrames": "top",
     "directHttpBlocked": true,
     "directHttpStatus": 403

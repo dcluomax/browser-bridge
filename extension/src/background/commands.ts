@@ -53,6 +53,8 @@ interface SiteRuntimeProfile {
   preferredWaitUntil?: 'load' | 'domcontentloaded' | 'commit';
   serviceWorkerNavigation?: boolean;
   hydrationSettleMs?: number;
+  readinessQuietMs?: number;
+  readinessSelector?: string;
   preferredSnapshotFrames?: 'top' | 'all';
   preferredInput?: 'trusted' | 'dom';
   actionSettleMs?: number;
@@ -190,6 +192,10 @@ export class Commands {
   constructor(private readonly registry: TabRegistry) {}
 
   async run(session: string, method: string, params: Params): Promise<unknown> {
+    if (params && typeof params === 'object' && '_noLearn' in params) {
+      const { _noLearn: _ignored, ...rest } = params;
+      params = rest;
+    }
     if (bool(params, 'readOnly') === true && !Commands.isReadSafeMethod(method, params)) {
       throw new BridgeError(
         'read_only',
@@ -537,11 +543,8 @@ export class Commands {
       if (nav.error) throw new BridgeError('navigation_failed', `Navigation failed: ${nav.error}${trace ? `; events=${JSON.stringify(watch.events())}` : ''}`);
       const loadTimedOutAfterDom = !nav.loaded && waitUntil === 'load' && Boolean(nav.domLoaded);
       const effectiveLoaded = nav.loaded || (explicitWaitUntil === undefined && loadTimedOutAfterDom);
-      if (effectiveLoaded && prof.hydrationSettleMs && prof.hydrationSettleMs > 0) {
-        await sleep(Math.min(prof.hydrationSettleMs, 600));
-      }
-      const after = await api.tabs.get(tab.id!);
-      const finalUrl = tabUrl(after) || url;
+      let after = await api.tabs.get(tab.id!);
+      let finalUrl = tabUrl(after) || url;
       try {
         this.registry.assertNavigationAllowed(session, tab.id, finalUrl);
       } catch (err) {
@@ -549,13 +552,70 @@ export class Commands {
         throw err;
       }
 
+      let settledMs: number | undefined;
+      let settleReason: string | undefined;
+      let contentChars: number | undefined;
+      let mainChars: number | undefined;
+
+      if (effectiveLoaded) {
+        if (prof.hydrationSettleMs && prof.hydrationSettleMs > 0) {
+          const capMs = Math.min(prof.hydrationSettleMs, 600);
+          try {
+            const quiet = await callFrame<{
+              settled: boolean;
+              waitedMs: number;
+              reason: string;
+              contentChars: number;
+              mainChars: number;
+            }>(after, 0, 'waitForDomQuiet', [
+              {
+                maxWaitMs: capMs,
+                quietMs: prof.readinessQuietMs ?? 75,
+                ...(prof.readinessSelector ? { selector: prof.readinessSelector } : {}),
+              },
+            ]);
+            settledMs = typeof quiet?.waitedMs === 'number' ? quiet.waitedMs : 0;
+            settleReason = typeof quiet?.reason === 'string' ? quiet.reason : 'quiet';
+            if (typeof quiet?.contentChars === 'number') contentChars = quiet.contentChars;
+            if (typeof quiet?.mainChars === 'number') mainChars = quiet.mainChars;
+            if (settledMs > 0) {
+              after = await api.tabs.get(tab.id!).catch(() => after);
+              finalUrl = tabUrl(after) || url;
+              try {
+                this.registry.assertNavigationAllowed(session, tab.id, finalUrl);
+              } catch (err) {
+                await api.tabs.update(tab.id!, { url: isBlank(beforeUrl) ? 'about:blank' : beforeUrl }).catch(() => undefined);
+                throw err;
+              }
+            }
+          } catch {
+            const fallbackMs = Math.min(prof.hydrationSettleMs, 120);
+            await sleep(fallbackMs);
+            settledMs = fallbackMs;
+            settleReason = 'fallback_sleep';
+          }
+        } else {
+          settledMs = 0;
+          settleReason = 'already_ready';
+        }
+      }
+
       let challenge: ChallengeDetection | null = null;
       if (effectiveLoaded && /^https?:/i.test(finalUrl)) {
-        const probe = await callFrame<{ title: string; url: string; textSample: string; markers: string[] }>(
+        const probe = await callFrame<{
+          title: string;
+          url: string;
+          textSample: string;
+          markers: string[];
+          contentChars?: number;
+          mainChars?: number;
+        }>(
           after,
           0,
           'detectChallengeMarkers',
         ).catch(() => undefined);
+        if (typeof probe?.contentChars === 'number') contentChars = probe.contentChars;
+        if (typeof probe?.mainChars === 'number') mainChars = probe.mainChars;
         challenge = detectBotChallenge({
           status: nav.status,
           url: finalUrl,
@@ -579,6 +639,10 @@ export class Commands {
           ...(nav.domLoadedMs !== undefined ? { domLoadedMs: nav.domLoadedMs } : {}),
           ...(nav.loadMs !== undefined ? { loadMs: nav.loadMs } : {}),
           ...(nav.swNoHeaders ? { swNoHeaders: true } : {}),
+          ...(settledMs !== undefined ? { settledMs } : {}),
+          ...(settleReason !== undefined ? { settleReason } : {}),
+          ...(contentChars !== undefined ? { contentChars } : {}),
+          ...(mainChars !== undefined ? { mainChars } : {}),
         },
       };
     } finally {
@@ -624,7 +688,20 @@ export class Commands {
     const maxChars = Math.max(1000, Math.min(num(params, 'maxChars') ?? 20_000, MAX_SNAPSHOT));
     const viewportOnly = bool(params, 'viewportOnly') ?? false;
     const header = `Tab ${tab.id}: ${tab.title ?? ''}\nURL: ${tabUrl(tab)}`;
-    if (isBlank(tabUrl(tab))) return { tabId: tab.id, text: `${header}\n(blank page)`, truncated: false };
+    if (isBlank(tabUrl(tab))) {
+      return {
+        tabId: tab.id,
+        text: `${header}\n(blank page)`,
+        truncated: false,
+        _telemetry: {
+          visibleIframes: 0,
+          childFramesScanned: 0,
+          nonEmptyChildFrames: 0,
+          contentChars: 0,
+          truncated: false,
+        },
+      };
+    }
     assertScriptable(tab);
     const root = str(params, 'root');
     const explicitFrames = str(params, 'frames');
@@ -666,6 +743,7 @@ export class Commands {
     const parts: string[] = [header];
     let truncated = false;
     let used = header.length;
+    let contentChars = 0;
     for (const { frameId, result } of frames) {
       if (frameId !== 0 && (!result.text.trim() || result.width * result.height === 0)) continue;
       if (frameId !== 0) nonEmptyChildFrames++;
@@ -681,6 +759,7 @@ export class Commands {
         truncated = true;
       }
       if (result.truncated) truncated = true;
+      contentChars += text.length;
       parts.push(sectionHeader ? `${sectionHeader}\n${text}` : text || '(no visible content)');
       used += sectionHeader.length + text.length + 1;
     }
@@ -700,7 +779,7 @@ export class Commands {
       text: parts.join('\n'),
       truncated,
       ...(challenge ? { challenge } : {}),
-      _telemetry: { visibleIframes, childFramesScanned, nonEmptyChildFrames },
+      _telemetry: { visibleIframes, childFramesScanned, nonEmptyChildFrames, contentChars, truncated },
     };
   }
 
@@ -710,11 +789,31 @@ export class Commands {
     if (params.ref !== undefined || params.locator !== undefined) {
       const { frameId, local } = parseRef((await this.targetRef(session, tab, params))!);
       const result = await callFrame<{ value: string; truncated: boolean }>(tab, frameId, 'queryElement', [local, null, 'innerText', null, maxChars]);
-      return { tabId: tab.id, url: tabUrl(tab), title: tab.title ?? '', text: result.value, truncated: result.truncated };
+      const extracted = typeof result.value === 'string' ? result.value : '';
+      const isTruncated = Boolean(result.truncated);
+      return {
+        tabId: tab.id,
+        url: tabUrl(tab),
+        title: tab.title ?? '',
+        text: extracted,
+        truncated: isTruncated,
+        _telemetry: { contentChars: extracted.length, truncated: isTruncated },
+      };
     }
-    if (isBlank(tabUrl(tab))) return { tabId: tab.id, url: tabUrl(tab), title: tab.title ?? '', text: '', truncated: false };
+    if (isBlank(tabUrl(tab))) {
+      return {
+        tabId: tab.id,
+        url: tabUrl(tab),
+        title: tab.title ?? '',
+        text: '',
+        truncated: false,
+        _telemetry: { contentChars: 0, truncated: false },
+      };
+    }
     const result = await callFrame<{ text: string; truncated: boolean; url: string; title: string }>(tab, 0, 'getText', [maxChars]);
-    return { tabId: tab.id, ...result };
+    const contentChars = typeof result.text === 'string' ? result.text.length : 0;
+    const isTruncated = Boolean(result.truncated);
+    return { tabId: tab.id, ...result, _telemetry: { contentChars, truncated: isTruncated } };
   }
 
   private async info(session: string, params: Params) {
@@ -905,11 +1004,41 @@ export class Commands {
     } as ActionResult;
   }
 
+  private async captureTargetTelemetry(
+    tab: chrome.tabs.Tab,
+    frameId: number,
+    localRef: string | null,
+    params: Params,
+  ): Promise<Record<string, unknown>> {
+    const out: Record<string, unknown> = {};
+    const explicitLocator = params.locator !== undefined ? parseLocator(params.locator) : undefined;
+    if (explicitLocator) {
+      out.semanticLocator = explicitLocator;
+    }
+    if (localRef) {
+      const meta = await callFrame<{ locator?: Locator; sensitive: boolean; label: string }>(
+        tab,
+        frameId,
+        'actionMeta',
+        [localRef, !explicitLocator],
+      ).catch(() => undefined);
+      if (meta) {
+        if (!explicitLocator && meta.locator) {
+          out.semanticLocator = frameId ? { frameId, ...meta.locator } : meta.locator;
+        }
+        if (meta.sensitive) out.sensitive = true;
+        if (meta.label) out.fieldLabel = meta.label;
+      }
+    }
+    return out;
+  }
+
   private async click(session: string, params: Params) {
     const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     this.registry.requireTabWrite(tab.id!, 'page.click');
     const prof = siteProfile(params);
     const { frameId, local } = parseRef((await this.targetRef(session, tab, params, 'enabled'))!);
+    const targetTel = await this.captureTargetTelemetry(tab, frameId, local, params);
     const button = str(params, 'button') ?? 'left';
     const clickCount = bool(params, 'doubleClick') ? 2 : 1;
     const modifiers = Array.isArray(params.modifiers) ? (params.modifiers as string[]) : [];
@@ -930,11 +1059,12 @@ export class Commands {
         if (result.covered) warnings.push(`The element was ${result.covered}; it was clicked directly with DOM events.`);
       }, prof);
       const settleMs = prof.actionSettleMs ?? 80;
+      const telemetry = { ...targetTel, ...(cdpFallback ? { cdpFallback: true } : {}) };
       return await this.finishAction(
         tab,
         watch,
         settleMs,
-        { input, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
+        { input, warnings, ...(Object.keys(telemetry).length ? { _telemetry: telemetry } : {}) },
         session,
         prof,
       );
@@ -1086,6 +1216,8 @@ export class Commands {
     this.registry.requireTabWrite(tab.id!, 'page.type');
     const prof = siteProfile(params);
     const ref = (await this.targetRef(session, tab, params, 'editable'))!;
+    const parsedRef = parseRef(ref);
+    const targetTel = await this.captureTargetTelemetry(tab, parsedRef.frameId, parsedRef.local, params);
     const text = typeof params.text === 'string' ? params.text : String(params.text ?? '');
     const options = { clear: bool(params, 'clear') ?? true, slowly: bool(params, 'slowly') ?? false, submit: bool(params, 'submit') ?? false };
     const warnings: string[] = [];
@@ -1093,11 +1225,12 @@ export class Commands {
     try {
       const { input, value, inForm, cdpFallback } = await this.typeInto(tab, ref, text, options, warnings, prof);
       const settleMs = options.submit ? (prof.submitSettleMs ?? (inForm ? 900 : 90)) : 60;
+      const telemetry = { ...targetTel, ...(cdpFallback ? { cdpFallback: true } : {}) };
       return await this.finishAction(
         tab,
         watch,
         settleMs,
-        { input, value, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
+        { input, value, warnings, ...(Object.keys(telemetry).length ? { _telemetry: telemetry } : {}) },
         session,
         prof,
       );
@@ -1139,12 +1272,20 @@ export class Commands {
     this.registry.requireTabWrite(tab.id!, 'page.select');
     const prof = siteProfile(params);
     const { frameId, local } = parseRef((await this.targetRef(session, tab, params, 'enabled'))!);
+    const targetTel = await this.captureTargetTelemetry(tab, frameId, local, params);
     const values = Array.isArray(params.values) ? params.values.map(String) : typeof params.values === 'string' ? [params.values] : [];
     if (!values.length) throw new BridgeError('bad_request', 'values must contain at least one option value or label.');
     const watch = watchNavigation(tab.id!);
     try {
       const { selected } = await callFrame<{ selected: string[] }>(tab, frameId, 'select', [local, values]);
-      return await this.finishAction(tab, watch, prof.actionSettleMs ?? 80, { selected }, session, prof);
+      return await this.finishAction(
+        tab,
+        watch,
+        prof.actionSettleMs ?? 80,
+        { selected, ...(Object.keys(targetTel).length ? { _telemetry: targetTel } : {}) },
+        session,
+        prof,
+      );
     } finally {
       watch.dispose();
     }
@@ -1156,9 +1297,17 @@ export class Commands {
     this.registry.requireTabWrite(tab.id!, 'page.check');
     const ref = (await this.targetRef(session, tab, params, 'enabled'))!;
     const { frameId, local } = parseRef(ref);
+    const targetTel = await this.captureTargetTelemetry(tab, frameId, local, params);
     const before = await callFrame<{ checked: boolean | null }>(tab, frameId, 'isChecked', [local]);
     if (before.checked === null) throw new BridgeError('bad_request', 'The target is not a checkbox, radio or aria-checked element.');
-    if (before.checked === params.checked) return { tabId: tab.id, checked: before.checked, changed: false };
+    if (before.checked === params.checked) {
+      return {
+        tabId: tab.id,
+        checked: before.checked,
+        changed: false,
+        ...(Object.keys(targetTel).length ? { _telemetry: targetTel } : {}),
+      };
+    }
     const action = await this.click(session, { ...params, tabId: tab.id });
     const after = await callFrame<{ checked: boolean | null }>(tab, frameId, 'isChecked', [local]);
     if (after.checked !== params.checked) throw new BridgeError('check_failed', 'The click did not produce the requested checked state.');
@@ -1173,9 +1322,11 @@ export class Commands {
     const keyPress = parseKeyCombo(key);
     const ref = await this.targetRef(session, tab, params, 'visible', false);
     let frameId = 0;
+    let targetTel: Record<string, unknown> = {};
     if (ref) {
       const parsed = parseRef(ref);
       frameId = parsed.frameId;
+      targetTel = await this.captureTargetTelemetry(tab, frameId, parsed.local, params);
       await callFrame(tab, frameId, 'focus', [parsed.local]);
     }
     const warnings: string[] = [];
@@ -1188,11 +1339,12 @@ export class Commands {
       const settleMs = keyPress.def.key === 'Enter'
         ? (prof.submitSettleMs ?? 800)
         : (prof.actionSettleMs ?? 80);
+      const telemetry = { ...targetTel, ...(cdpFallback ? { cdpFallback: true } : {}) };
       return await this.finishAction(
         tab,
         watch,
         settleMs,
-        { input, warnings, ...(cdpFallback ? { _telemetry: { cdpFallback: true } } : {}) },
+        { input, warnings, ...(Object.keys(telemetry).length ? { _telemetry: telemetry } : {}) },
         session,
         prof,
       );

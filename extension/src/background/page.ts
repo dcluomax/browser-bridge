@@ -69,17 +69,28 @@ async function executeWithRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-const EXPECTED_CONTENT_VERSION = '0.10.1';
+const EXPECTED_CONTENT_VERSION = '0.11.0';
 
 /** Runs inside the page (isolated world). Must be self-contained: it is serialized by the browser. */
-function invokeContent(method: string, args: unknown[], expectedVersion: string): { ok?: unknown; err?: string; missing?: boolean } {
+function invokeContent(
+  method: string,
+  args: unknown[],
+  expectedVersion: string,
+): { ok?: unknown; err?: string; missing?: boolean } | Promise<{ ok?: unknown; err?: string; missing?: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bb = (globalThis as any).__bb;
   if (!bb || (bb.version !== undefined && bb.version !== expectedVersion) || typeof bb[method] !== 'function') {
     return { missing: true };
   }
   try {
-    return { ok: bb[method](...args) };
+    const out = bb[method](...args);
+    if (out && typeof (out as PromiseLike<unknown>).then === 'function') {
+      return Promise.resolve(out).then(
+        (ok) => ({ ok }),
+        (error: unknown) => ({ err: error instanceof Error ? error.message : String(error) }),
+      );
+    }
+    return { ok: out };
   } catch (error) {
     return { err: error instanceof Error ? error.message : String(error) };
   }

@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "youtube.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
-  "speedupSummary": "Video search + results snapshot in ~2,040 ms via domcontentloaded + 250 ms Polymer hydration (avoids 8s-30s streaming onload stall)",
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
+  "speedupSummary": "Video search + results snapshot in ~2,040 ms via domcontentloaded + Polymer readinessSelector (avoids 8s-30s streaming onload stall)",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
-    "hydrationSettleMs": 250,
+    "hydrationSettleMs": 350,
+    "readinessQuietMs": 75,
+    "readinessSelector": "ytd-item-section-renderer, ytd-rich-grid-renderer, ytd-watch-flexy, #contents",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

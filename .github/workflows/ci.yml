@@ -29,6 +29,8 @@ jobs:
         run: node scripts/check-sanitized.mjs
       - name: Run SVG layout & overflow check
         run: node scripts/check-svg-layout.mjs
+      - name: Run static site-playbook schema & hygiene gate
+        run: python3 scripts/check-routine-gate.py --routines-dir routines
 
   extension:
     name: Browser Extension (MV3 & MV2)

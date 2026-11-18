@@ -1,11 +1,11 @@
 # Browser Bridge Feature Deep Dive
 
-Every subsystem in Browser Bridge `v0.10.1` is engineered around four core design guarantees:
+Every subsystem in Browser Bridge `v0.11.0` is engineered around four core design guarantees:
 
 - **100% Local:** Runs inside your own live, signed-in Edge, Chrome, Brave, or Firefox profile with zero cloud relays and zero WebDriver browser downloads.
 - **Zero-Port Secure:** Opens **0 TCP/WebSocket ports**, authenticates over OS user-isolated Named Pipes / `0600` Unix sockets, and enforces **3-layer Read-Only / Read-Write tab ACLs**, `allowedOrigins` domain fences, and automatic password/JWT redaction.
 - **Native FAST:** Ships as a **~1.5 MB standalone Rust binary** (~8 MB RAM) delivering **`~1.1 ms` median Direct Pipe RTT**, Chromium MV3 `injectImmediately: true` DOM injection, multi-hop redirect tracking, focus-free background screenshots, and a 0-dependency Python SDK.
-- **Self-Evolving:** Ships **24 git-tracked, timestamped `routines/*.json` site optimization playbooks** (`schemaVersion: 2`, `PATCH 0.10.Z` upgrade auto-merge, `[STALE]` website-redesign drift guard, **15×–1,800× network-excluded speedups**), passively learns adaptations via **`SiteLearner`**, records user demonstrations via **`browser_demonstrate`**, and discovers native W3C **WebMCP (`document.modelContext`)** tools.
+- **Self-Evolving:** Combines **zero-config engine mitigations**, **quality-constrained `SiteLearner` v2** (event-driven `waitForDomQuiet` DOM readiness, ordered wait lattice, clean-streak decay, and `>= 85%` content-completeness guardrails), **24 git-tracked, timestamped `routines/*.json` site optimization playbooks** (`schemaVersion: 2`, `PATCH` `N >= 20` empirical release gate, field-level provenance, semantic relocation auto-repair & `[STALE]` drift guard), **`browser_demonstrate`**, and native W3C **WebMCP (`document.modelContext`)** tools.
 
 This document details the 31+1 MCP tools, DOM/Canvas/SVG accessibility snapshots, structured locators, Timestamped Site Optimization JSONs (`routines/*.json`), Adaptive Error-Driven Site Learning (`SiteLearner`), and W3C WebMCP integration.
 
@@ -87,25 +87,30 @@ This document details the 31+1 MCP tools, DOM/Canvas/SVG accessibility snapshots
 
 ---
 
-## 3. How `SiteLearner` Eliminates Repeat Detours
+## 3. How `SiteLearner` v2 Eliminates Repeat Detours Without Regressions
 
-`SiteLearner` lives inside the Rust host (`bridge-core::routines`) and passively observes command telemetry and errors per canonical hostname (skipping `localhost` / `127.0.0.1` unless explicitly configured for testing):
+`SiteLearner` v2 lives inside the Rust host (`bridge-core::routines`) paired with the extension's event-driven readiness engine (`waitForDomQuiet`), modeling per-route browser readiness as a **quality-constrained contextual bandit** rather than one-way heuristic sleep rules:
 
-| Observed Friction on Visit 1 | Automatic Adaptation Persisted in `SitePlaybook` | Benefit on Visit 2+ |
+- **Event-Driven DOM Readiness (`waitForDomQuiet` vs. Blind Sleeps):** Instead of sleeping unconditionally for `hydrationSettleMs`, the content script attaches a bounded `MutationObserver` and optional landmark check that resolves immediately once DOM mutations remain quiet (or the primary landmark renders with content), treating `min(hydrationSettleMs, 600 ms)` strictly as an **upper timeout cap**. Already-hydrated SSR pages settle in milliseconds without paying fixed timer waste.
+- **Quality-Constrained Route Bandit (`(domain, routeTemplate, opClass)`):** Tracks per-arm `p50`/`p95` post-network latency, success rate, and extracted character yield separately per route template (isolating e.g. `docs.google.com/document` from `/spreadsheets`). Candidate readiness arms minimize tail-weighted latency (`0.7 * p50 + 0.3 * p95`) subject to `>= 90%` reliability and a **`>= 85%` reference content-completeness floor** (`C_ref`), exploring only on idempotent reads and transparently retrying with a conservative safe arm if an early snapshot returns an unhydrated shell.
+- **Ordered Wait Lattice, `k >= 3` Hysteresis & Clean-Streak Decay:** Enforces a strict total order `commit < domcontentloaded < load` so `load`-timeout telemetry never overwrites a faster `commit` profile; requires `k >= 3` consistent observations before switching wait levels; decays `hydrationSettleMs` caps downward after consecutive clean navigations; and attaches TTLs to latched transport flags (`serviceWorkerNavigation`, `preferredInput`).
+- **Strict Credit-Assignment & Benchmark Isolation (`_noLearn`):** Ignores caller-overridden wait/frame calls when updating learned defaults and honors `_noLearn: true` across RPC commands so multi-stage benchmarks never mutate the profile under test.
+- **Field-Level Provenance (`seed` / `learned` / `user`) & Semantic Relocation:** Merges `seed`, `learned`, and `user` profile fields independently on upgrade (`user` overrides always win) and attempts ARIA/landmark semantic relocation with graceful top-frame snapshot fallback before marking broken routines `[STALE]`.
+
+| Observed Friction on Visit 1 | Quality-Constrained `SiteLearner` v2 Adaptation | Benefit on Subsequent Visits |
 | --- | --- | --- |
-| `page.navigate` hits `load` timeout while DOM is already interactive (stalled analytics/ad beacon) | Sets `preferredWaitUntil = "domcontentloaded"` | Skips multi-second stalled `onload` waits automatically |
-| Slow tail between `DOMContentLoaded` and `load` (`> 2.5s`) across visits | Sets `preferredWaitUntil = "domcontentloaded"` | Cuts navigation latency by 60–90% |
-| Early `stale_ref` or `not_ready` right after navigation | Tunes `hydrationSettleMs` (`150–400 ms`) | Prevents SPA React/Next/Vue hydration race failures |
+| `page.navigate` repeatedly (`k >= 3`) hits `load` timeouts or `> 3s` post-DOM tails while content is complete | Relaxes ordered wait mode `load -> domcontentloaded` (never inverting `commit`) | Skips multi-second stalled `onload` beacons without regressing faster `commit` seeds |
+| Early snapshot returns `< 85%` of `C_ref` or triggers post-nav `stale_ref` | Raises `waitForDomQuiet` upper cap (`150–600 ms`) & retries safe arm immediately; decays cap after clean streaks | Captures full SPA hydration (`youtube.com`, `x.com`) while imposing near-zero delay once SSR DOMs are quiet |
 | Action fails with `covered by <div#cookie-wall>`, agent clicks `#accept-cookies`, then retry succeeds | Records `LearnedRecoveryRule` triad (`blocker`, `recoveryMethod`, `recoveryTarget`) | Surfaces exact proven dismissal step immediately |
-| Chromium `chrome.debugger` attachment is blocked by enterprise policy or extension conflict | Sets `preferredInput = "dom"` (with 24h TTL) | Avoids repeated debugger attach retries |
+| Chromium `chrome.debugger` attachment is blocked by enterprise policy or extension conflict | Sets `preferredInput = "dom"` with 24h TTL expiration | Avoids repeated debugger attach retries without permanent lock-in |
 | Plain HTTP `request.fetch` receives `403` / `429` WAF block while `page.fetch` succeeds | Sets `directHttpBlocked = true` | `smart_fetch` routes directly through the authenticated tab |
-| A saved routine fails `>= 2` consecutive times with selector/timeout errors after a website redesign | Marks routine `stale = true` with `staleReason` | Flags `[STALE - DOM may have changed]` so the agent refreshes selectors via `browser_snapshot` |
+| A saved routine selector misses after a website UI redesign | Attempts semantic ARIA/heading relocation + safe top-frame fallback; marks `stale = true` after `>= 2` misses | Prevents brittle routine failure cliffs while flagging `[STALE]` for refresh via `browser_routine_save` |
 
 ---
 
 ## 4. Built-In Timestamped Site Optimization Playbooks (`routines/*.json` — 24 Sites)
 
-All **24** built-in playbooks live in [`routines/`](../routines/) (`schemaVersion: 2`), follow the **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Policy ([`docs/VERSIONING.md`](VERSIONING.md))**, auto-refresh outdated built-in routines and `accessProfile` latency settings when `seed.verifiedAt >= disk.updatedAt` without touching custom user flows, and deliver **15×–1,800× network-excluded speedups**:
+All **24** built-in playbooks live in [`routines/`](../routines/) (`schemaVersion: 2`), follow the **3rd-digit (`PATCH`, `0.10.Z`) Empirical Release Gate ([`docs/VERSIONING.md`](VERSIONING.md))** (`scripts/check-routine-gate.py`: `N >= 20` interleaved `_noLearn: true` trials verifying `p50`/`p95` non-regression and `>= 80%` content completeness vs. `load`), merge cleanly via field-level provenance (`seed` / `learned` / `user`), and combine with zero-config engine mitigations and `waitForDomQuiet` to eliminate multi-second non-network stalls:
 
 | Playbook File | Canonical Domain / Alias | Built-in Routines | Network-Excluded / `0-Net` Speedup |
 | --- | --- | --- | --- |

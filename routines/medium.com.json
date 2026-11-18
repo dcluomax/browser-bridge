@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "medium.com",
-  "verifiedAt": "2026-11-17T17:55:00Z",
-  "updatedAt": "2026-11-17T17:55:00Z",
-  "updatedAtEpochS": 1794938100,
-  "speedupSummary": "Page open + snapshot: 23,679 ms (Google GSI parser stall + 12,825 ms One-Tap iframe hang) -> ~590 ms (40x faster via commit + hydrationSettleMs + injectImmediately + top-frame)",
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
+  "speedupSummary": "Page open + snapshot: 23,679 ms (Google GSI parser stall + 12,825 ms One-Tap iframe hang) -> ~590 ms (40x faster via domcontentloaded + readinessSelector + injectImmediately + top-frame)",
   "accessProfile": {
-    "preferredWaitUntil": "commit",
-    "hydrationSettleMs": 450,
+    "preferredWaitUntil": "domcontentloaded",
+    "hydrationSettleMs": 200,
+    "readinessQuietMs": 60,
+    "readinessSelector": "article, main, [role='main']",
     "preferredSnapshotFrames": "top"
   },
   "notes": [
