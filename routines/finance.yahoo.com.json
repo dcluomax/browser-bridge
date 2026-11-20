@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "finance.yahoo.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Ticker quote + valuation metrics lookup: 8,050 ms+ -> 702 ms (11.5x faster via domcontentloaded + top-frame + header menu compaction)",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
+    "readinessQuietMs": 65,
+    "readinessSelector": "main, #nimbus-app, [data-testid='quote-hdr']",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

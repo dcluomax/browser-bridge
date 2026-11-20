@@ -14,6 +14,7 @@ Usage:
   BrowserBridge mcp [--read-only] [--allow-evaluate]  Run the MCP server on stdio (--read-only disables all actions).
   BrowserBridge mcp-mode [status|read-only|read-write] Inspect or switch ~/.copilot/mcp-config.json MCP mode.
   BrowserBridge routines [<domain-or-url>] [--json]    Inspect learned Site Memory routines and recorded pitfalls.
+  BrowserBridge activity [--limit <N>] [--json]        Inspect recent redacted session activity (origin+path only, <=500 entries).
   BrowserBridge rpc                        Run the managed local-script API on stdio.
   BrowserBridge screenshot <output-path> [--tab <id>] [--browser <sel>] [--full-page] [--selector <css>] [--ref <ref>] [--format png|jpeg] [--quality <10-100>] [--max-width <px>]
   BrowserBridge install --chromium-id <id> [--gecko-id <id>] [--browsers edge,chrome,chromium,firefox] [--host-path <exe>]
@@ -42,6 +43,7 @@ async fn main() {
         Some("mcp") => mcp::run_async(&args[1..]).await,
         Some("mcp-mode") => mcp_mode(&args[1..]),
         Some("routines") => routines_cmd(&args[1..]),
+        Some("activity") => activity_cmd(&args[1..]),
         Some("rpc") => rpc::run_async().await,
         Some("screenshot") => screenshot_async(&args[1..]).await,
         Some("install") => installer::install(&args[1..], &mut io::stdout()),
@@ -143,6 +145,50 @@ fn routines_cmd(args: &[String]) -> i32 {
                 pb.routines.len(),
                 pb.notes.len(),
                 pb.pitfalls.len()
+            );
+        }
+    }
+    0
+}
+
+fn activity_cmd(args: &[String]) -> i32 {
+    let as_json = args.iter().any(|a| a == "--json");
+    let mut limit = 50usize;
+    let mut idx = 0usize;
+    while idx < args.len() {
+        if args[idx] == "--limit" {
+            if let Some(val) = args.get(idx + 1).and_then(|s| s.parse::<usize>().ok()) {
+                limit = val.clamp(1, bridge_core::routines::MAX_ACTIVITY_LOG_ENTRIES);
+            }
+            idx += 2;
+            continue;
+        }
+        idx += 1;
+    }
+    let entries = bridge_core::routines::read_activity_log(limit);
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".into()));
+    } else if entries.is_empty() {
+        println!(
+            "No activity entries recorded yet ({}).",
+            bridge_core::routines::activity_log_path().display()
+        );
+    } else {
+        println!(
+            "Recent redacted activity ({} entries, path: {}):",
+            entries.len(),
+            bridge_core::routines::activity_log_path().display()
+        );
+        for e in entries {
+            let tid = e.tab_id.map(|t| format!("#{t}")).unwrap_or_else(|| "-".into());
+            let status = if e.ok {
+                "OK".to_string()
+            } else {
+                format!("ERR({})", e.error_code.unwrap_or_else(|| "error".into()))
+            };
+            println!(
+                "  {}  {:<6} {:<6} {:<18} {:>5}ms  {:<10} {}",
+                e.ts, e.browser, tid, e.method, e.ms, status, e.target
             );
         }
     }

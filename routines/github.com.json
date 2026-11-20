@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "github.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Repository/Issue navigation 3,469 ms -> ~920 ms (3.8x faster via domcontentloaded); full README / PR / Issue extraction in ~50 ms without 200-link repo header truncation",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
     "hydrationSettleMs": 120,
+    "readinessQuietMs": 60,
+    "readinessSelector": "main, article.markdown-body, [role='main'], #repo-content-pjax-container",
     "preferredSnapshotFrames": "top",
     "submitSettleMs": 120
   },

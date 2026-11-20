@@ -7,7 +7,7 @@
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
 
-const CONTENT_VERSION = '0.10.1';
+const CONTENT_VERSION = '0.11.1';
 
 interface SnapshotOptions {
   maxChars?: number;
@@ -73,9 +73,38 @@ const VALUE_INPUT_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'w
 // Element references
 // ---------------------------------------------------------------------------------------------
 
+interface RefDescriptor {
+  href: string;
+  tag: string;
+  testId: string | null;
+  id: string | null;
+  role: string | null;
+  name: string;
+}
+
 const elementToRef = new WeakMap<Element, string>();
 const refToElement = new Map<string, WeakRef<Element>>();
+const refMeta = new Map<string, RefDescriptor>();
+const MAX_REF_META = 2500;
 let nextRef = 1;
+
+function recordRefMeta(ref: string, el: Element): void {
+  const role = computeRole(el);
+  const name = role && role !== 'generic' ? accessibleName(el, role, 120) : '';
+  const id = el.id && !/^\d|[:\s]/.test(el.id) && el.id.length <= 48 ? el.id : null;
+  refMeta.set(ref, {
+    href: location.href,
+    tag: el.localName,
+    testId: attr(el, 'data-testid'),
+    id,
+    role,
+    name,
+  });
+  if (refMeta.size > MAX_REF_META) {
+    const oldest = refMeta.keys().next().value;
+    if (oldest !== undefined) refMeta.delete(oldest);
+  }
+}
 
 function refFor(el: Element): string {
   let ref = elementToRef.get(el);
@@ -83,23 +112,60 @@ function refFor(el: Element): string {
     ref = `e${nextRef++}`;
     elementToRef.set(el, ref);
     refToElement.set(ref, new WeakRef(el));
+    recordRefMeta(ref, el);
+  } else if (!refToElement.has(ref)) {
+    refToElement.set(ref, new WeakRef(el));
+    recordRefMeta(ref, el);
   }
   return ref;
 }
 
+function healDetachedRef(ref: string): Element | null {
+  const meta = refMeta.get(ref);
+  if (!meta || meta.href !== location.href) return null;
+  const candidates: Locator[] = [];
+  if (meta.testId) {
+    candidates.push({ steps: [{ kind: 'testId', value: meta.testId }] });
+  }
+  if (meta.id) {
+    candidates.push({ steps: [{ kind: 'css', value: `#${CSS.escape(meta.id)}` }] });
+  }
+  if (meta.role && meta.role !== 'generic' && meta.name) {
+    candidates.push({ steps: [{ kind: 'role', value: meta.role, name: meta.name, exact: true }] });
+  }
+  for (const cand of candidates) {
+    try {
+      const matches = findElements(cand).filter((m) => m.isConnected && m.localName === meta.tag);
+      if (matches.length === 1) {
+        const healed = matches[0];
+        elementToRef.set(healed, ref);
+        refToElement.set(ref, new WeakRef(healed));
+        return healed;
+      }
+    } catch {
+      // ignore invalid selector edge cases
+    }
+  }
+  return null;
+}
+
 function resolve(ref: string): Element {
   const el = refToElement.get(ref)?.deref();
-  if (!el || !el.isConnected) {
-    refToElement.delete(ref);
-    throw new Error(`Element ref "${ref}" is stale or unknown in this page. Take a new browser_snapshot and use a current ref.`);
-  }
-  return el;
+  if (el && el.isConnected) return el;
+  refToElement.delete(ref);
+  const healed = healDetachedRef(ref);
+  if (healed) return healed;
+  throw new Error(`Element ref "${ref}" is stale or unknown in this page. Take a new browser_snapshot and use a current ref.`);
 }
 
 function pruneRefs(): void {
   for (const [ref, weak] of refToElement) {
     const el = weak.deref();
     if (!el || !el.isConnected) refToElement.delete(ref);
+  }
+  const curHref = location.href;
+  for (const [ref, meta] of refMeta) {
+    if (meta.href !== curHref) refMeta.delete(ref);
   }
 }
 
@@ -1903,7 +1969,294 @@ function queryAll(locator: Locator, operation: string, attribute: string | null)
   return { values, count: matches.length, truncated };
 }
 
-function detectChallengeMarkers(): { title: string; url: string; textSample: string; markers: string[] } {
+let handoffHost: HTMLElement | null = null;
+let demoCleanup: (() => void) | null = null;
+let demoSteps: RecordedStep[] = [];
+
+const MAIN_CONTENT_SELECTOR = "main, [role='main'], article, #search, #rso, #rcnt, #content";
+
+export interface DomQuietOptions {
+  maxWaitMs?: number;
+  quietMs?: number;
+  selector?: string;
+  minChars?: number;
+}
+
+export interface DomQuietResult {
+  settled: boolean;
+  waitedMs: number;
+  reason: 'already_ready' | 'selector' | 'quiet' | 'cap';
+  contentChars: number;
+  mainChars: number;
+}
+
+function isBridgeOverlayElement(el: Element): boolean {
+  if (el === handoffHost) return true;
+  if (el.id === '__bb_handoff_host__') return true;
+  return typeof el.hasAttribute === 'function' && el.hasAttribute('data-bb-overlay');
+}
+
+function isInsideBridgeOverlay(node: Node | null): boolean {
+  let cur: Node | null = node;
+  while (cur) {
+    if (cur.nodeType === 1 && isBridgeOverlayElement(cur as Element)) return true;
+    cur = cur.parentNode ?? (cur as ShadowRoot).host ?? null;
+  }
+  return false;
+}
+
+function fastTextChars(root: Element | null | undefined): number {
+  if (!root || isBridgeOverlayElement(root)) return 0;
+  const sr = shadowRootOf(root);
+  if ((!root.childNodes || root.childNodes.length === 0) && (!sr || !sr.childNodes || sr.childNodes.length === 0)) {
+    return collapse(root.textContent).length;
+  }
+  const parts: string[] = [];
+  const walk = (node: Element | ShadowRoot) => {
+    for (const child of childNodesOf(node)) {
+      if (child.nodeType === 3) {
+        if (child.nodeValue) parts.push(child.nodeValue);
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      const tag = (el.localName || el.tagName || '').toLowerCase();
+      if (SKIP_TAGS.has(tag) || isBridgeOverlayElement(el)) continue;
+      if (typeof el.hasAttribute === 'function' && el.hasAttribute('hidden')) continue;
+      walk(el);
+    }
+  };
+  walk(root);
+  return collapse(parts.join(' ')).length;
+}
+
+export function measureContent(): { contentChars: number; mainChars: number } {
+  const body = document.body ?? document.documentElement;
+  const contentChars = fastTextChars(body);
+  let mainEl: Element | null = null;
+  try {
+    mainEl = typeof document.querySelector === 'function' ? document.querySelector(MAIN_CONTENT_SELECTOR) : null;
+  } catch {
+    mainEl = null;
+  }
+  const mainChars = mainEl ? fastTextChars(mainEl) : 0;
+  return { contentChars, mainChars };
+}
+
+function isIntrinsicNonTextLandmark(el: Element): boolean {
+  if (el.hasAttribute?.('hidden') || el.getAttribute?.('aria-hidden') === 'true') return false;
+  const tag = (el.localName ?? el.tagName ?? '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'canvas') {
+    const typeAttr = (el.getAttribute?.('type') ?? '').toLowerCase();
+    return typeAttr !== 'hidden' && !(el as HTMLInputElement).disabled;
+  }
+  const ce = el.getAttribute?.('contenteditable');
+  return ce === '' || ce === 'true' || ce === 'plaintext-only';
+}
+
+const VISUAL_LANDMARK_TAGS = new Set(['img', 'svg', 'video', 'iframe', 'embed', 'object', 'canvas']);
+
+function elementLandmarkReady(el: Element, allowLayoutRead = true): boolean {
+  if (isBridgeOverlayElement(el)) return false;
+  if (fastTextChars(el) > 0) return true;
+  if (isIntrinsicNonTextLandmark(el)) return true;
+  if (allowLayoutRead && typeof el.getBoundingClientRect === 'function') {
+    const tag = (el.localName ?? el.tagName ?? '').toLowerCase();
+    if (VISUAL_LANDMARK_TAGS.has(tag) || tag.includes('-')) {
+      const rect = el.getBoundingClientRect();
+      if (rect && rect.width > 0 && (rect.height === undefined || rect.height > 0)) return true;
+    }
+  }
+  return false;
+}
+
+export function selectorReady(sel?: string, allowLayoutRead = true): boolean {
+  const trimmed = typeof sel === 'string' ? sel.trim() : '';
+  if (!trimmed) return false;
+  try {
+    if (typeof document.querySelectorAll === 'function') {
+      const matches = document.querySelectorAll(trimmed);
+      const limit = Math.min(matches.length, 8);
+      for (let i = 0; i < limit; i++) {
+        const el = matches[i];
+        if (el && elementLandmarkReady(el, allowLayoutRead)) return true;
+      }
+      return false;
+    }
+    const single = typeof document.querySelector === 'function' ? document.querySelector(trimmed) : null;
+    return Boolean(single && elementLandmarkReady(single, allowLayoutRead));
+  } catch {
+    return false;
+  }
+}
+
+function isRelevantMutationBatch(records: MutationRecord[]): boolean {
+  for (const rec of records) {
+    if (isInsideBridgeOverlay(rec.target)) continue;
+    if (rec.type === 'childList') {
+      const added = rec.addedNodes ? Array.from(rec.addedNodes) : [];
+      const removed = rec.removedNodes ? Array.from(rec.removedNodes) : [];
+      if (
+        added.length + removed.length > 0 &&
+        [...added, ...removed].every((n) => n.nodeType === 1 && isBridgeOverlayElement(n as Element))
+      ) {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+export function waitForDomQuiet(options?: DomQuietOptions): Promise<DomQuietResult> {
+  const rawMax = Number(options?.maxWaitMs ?? 0);
+  const maxWaitMs = Math.max(0, Math.min(Number.isFinite(rawMax) ? rawMax : 0, 600));
+  const rawQuiet = Number(options?.quietMs ?? 75);
+  const quietMs = Math.max(20, Math.min(Number.isFinite(rawQuiet) ? rawQuiet : 75, 300));
+  const rawMinChars = Number(options?.minChars ?? 64);
+  const minChars = Math.max(0, Number.isFinite(rawMinChars) ? rawMinChars : 64);
+  const selector = typeof options?.selector === 'string' && options.selector.trim() ? options.selector.trim() : undefined;
+
+  if (maxWaitMs <= 0) {
+    return Promise.resolve({ settled: true, waitedMs: 0, reason: 'already_ready', ...measureContent() });
+  }
+  if (selector && selectorReady(selector)) {
+    return Promise.resolve({ settled: true, waitedMs: 0, reason: 'selector', ...measureContent() });
+  }
+  if (!document.documentElement || typeof MutationObserver !== 'function') {
+    return Promise.resolve({ settled: true, waitedMs: 0, reason: 'already_ready', ...measureContent() });
+  }
+
+  const nowMs = () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now());
+  const startedAt = nowMs();
+  const emptyGraceMs = Math.min(maxWaitMs, 150);
+
+  return new Promise<DomQuietResult>((resolvePromise) => {
+    let done = false;
+    let lastActivityAt = startedAt;
+    let observer: MutationObserver | null = null;
+    let quietTimer: ReturnType<typeof setTimeout> | null = null;
+    let capTimer: ReturnType<typeof setTimeout> | null = null;
+    let onReadyState: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      if (quietTimer !== null) {
+        clearTimeout(quietTimer);
+        quietTimer = null;
+      }
+      if (capTimer !== null) {
+        clearTimeout(capTimer);
+        capTimer = null;
+      }
+      if (onReadyState && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('readystatechange', onReadyState);
+        onReadyState = null;
+      }
+    };
+
+    const finish = (
+      settled: boolean,
+      reason: DomQuietResult['reason'],
+      preMeasured?: { contentChars: number; mainChars: number },
+    ) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      const metrics = preMeasured ?? measureContent();
+      const waitedMs = Math.max(0, Math.min(maxWaitMs, Math.round(nowMs() - startedAt)));
+      resolvePromise({
+        settled,
+        waitedMs,
+        reason,
+        contentChars: metrics.contentChars,
+        mainChars: metrics.mainChars,
+      });
+    };
+
+    const armQuietTimer = (delayMs: number) => {
+      if (done) return;
+      if (quietTimer !== null) clearTimeout(quietTimer);
+      quietTimer = setTimeout(onQuietCheck, Math.max(1, Math.round(delayMs)));
+    };
+
+    const onQuietCheck = () => {
+      if (done) return;
+      quietTimer = null;
+      if (selector && selectorReady(selector)) {
+        finish(true, 'selector');
+        return;
+      }
+      const now = nowMs();
+      const quietFor = now - lastActivityAt;
+      if (quietFor + 1 < quietMs) {
+        armQuietTimer(quietMs - quietFor);
+        return;
+      }
+      if (document.readyState === 'loading') {
+        armQuietTimer(Math.min(quietMs, 25));
+        return;
+      }
+      const elapsed = now - startedAt;
+      const measured = measureContent();
+      if (measured.contentChars >= minChars || elapsed + 1 >= emptyGraceMs) {
+        finish(true, 'quiet', measured);
+        return;
+      }
+      armQuietTimer(Math.max(10, emptyGraceMs - elapsed));
+    };
+
+    observer = new MutationObserver((records) => {
+      if (done) return;
+      if (!isRelevantMutationBatch(records)) return;
+      if (selector && selectorReady(selector, false)) {
+        finish(true, 'selector');
+        return;
+      }
+      lastActivityAt = nowMs();
+      armQuietTimer(quietMs);
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    if (document.readyState === 'loading' && typeof document.addEventListener === 'function') {
+      onReadyState = () => {
+        if (done) return;
+        if (selector && selectorReady(selector)) {
+          finish(true, 'selector');
+        } else if (nowMs() - lastActivityAt + 1 >= quietMs) {
+          onQuietCheck();
+        }
+      };
+      document.addEventListener('readystatechange', onReadyState);
+    }
+
+    armQuietTimer(quietMs);
+    capTimer = setTimeout(() => {
+      if (selector && selectorReady(selector)) {
+        finish(true, 'selector');
+      } else {
+        finish(false, 'cap');
+      }
+    }, maxWaitMs);
+  });
+}
+
+export function detectChallengeMarkers(): {
+  title: string;
+  url: string;
+  textSample: string;
+  markers: string[];
+  contentChars: number;
+  mainChars: number;
+} {
   const markers: string[] = [];
   if (
     document.querySelector(
@@ -1924,8 +2277,9 @@ function detectChallengeMarkers(): { title: string; url: string; textSample: str
   if (document.querySelector('iframe[src*="captcha-delivery.com"]')) {
     markers.push('datadome');
   }
-  const textSample = truncate(collapse(document.body?.innerText ?? ''), 1200);
-  return { title: document.title ?? '', url: location.href, textSample, markers };
+  const { contentChars, mainChars } = measureContent();
+  const textSample = truncate(collapse(document.body?.innerText ?? document.body?.textContent ?? ''), 1200);
+  return { title: document.title ?? '', url: location.href, textSample, markers, contentChars, mainChars };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1936,10 +2290,6 @@ interface RecordedStep {
   op: string;
   params: Record<string, unknown>;
 }
-
-let handoffHost: HTMLElement | null = null;
-let demoCleanup: (() => void) | null = null;
-let demoSteps: RecordedStep[] = [];
 
 function sendRuntimeMessage(payload: Record<string, unknown>): void {
   try {
@@ -1976,6 +2326,7 @@ function showHandoffCard(options: {
   style.textContent = `
     .card {
       width: 320px;
+      contain: layout style paint;
       font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       background: #18191c;
       color: #f3f4f6;
@@ -2064,7 +2415,7 @@ function isSensitiveInput(el: Element): boolean {
 function synthesizeLocator(el: Element): Locator {
   const testId = attr(el, 'data-testid');
   if (testId) {
-    const cand: Locator = { steps: [{ kind: 'testId', value: testId, exact: true }] };
+    const cand: Locator = { steps: [{ kind: 'testId', value: testId }] };
     if (findElements(cand).length === 1) return cand;
   }
   const role = computeRole(el);
@@ -2118,6 +2469,24 @@ function synthesizeLocator(el: Element): Locator {
   return { steps: [{ kind: 'css', value: parts.join(' > ') || el.localName }] };
 }
 
+function actionMeta(ref: string, includeLocator = true): { locator?: Locator; sensitive: boolean; label: string } {
+  const el = resolve(ref);
+  const role = computeRole(el);
+  const label = (
+    (role && role !== 'generic' ? accessibleName(el, role, 80) : '') ||
+    labelText(el) ||
+    attr(el, 'placeholder') ||
+    attr(el, 'data-testid') ||
+    el.id ||
+    el.localName
+  ).trim();
+  return {
+    ...(includeLocator ? { locator: synthesizeLocator(el) } : {}),
+    sensitive: isSensitiveInput(el),
+    label,
+  };
+}
+
 function stopDemoRecorder(): { stopped: boolean; steps: RecordedStep[] } {
   if (demoCleanup) {
     demoCleanup();
@@ -2144,6 +2513,7 @@ function startDemoRecorder(options: {
   style.textContent = `
     .bar {
       width: 310px;
+      contain: layout style paint;
       font: 12.5px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       background: #18191c; color: #f3f4f6;
       border: 1px solid rgba(239,68,68,0.45); border-radius: 12px;
@@ -2303,27 +2673,6 @@ function startDemoRecorder(options: {
   return { started: true };
 }
 
-function readNavigationTiming(): {
-  ttfbMs: number;
-  networkMs: number;
-  domContentLoadedMs: number | null;
-  loadEventMs: number | null;
-} | undefined {
-  try {
-    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-    if (!nav) return undefined;
-    const ttfbMs = Math.max(0, Math.round(nav.responseStart - nav.startTime));
-    const networkMs = Math.max(ttfbMs, Math.round(nav.responseEnd - nav.startTime));
-    const domContentLoadedMs =
-      nav.domContentLoadedEventEnd > 0 ? Math.max(0, Math.round(nav.domContentLoadedEventEnd - nav.startTime)) : null;
-    const loadEventMs =
-      nav.loadEventEnd > 0 ? Math.max(0, Math.round(nav.loadEventEnd - nav.startTime)) : null;
-    return { ttfbMs, networkMs, domContentLoadedMs, loadEventMs };
-  } catch {
-    return undefined;
-  }
-}
-
 const bb = {
   version: CONTENT_VERSION,
   snapshot,
@@ -2347,6 +2696,7 @@ const bb = {
   discoverDeclarativeWebMcp,
   callDeclarativeWebMcp,
   detectChallengeMarkers,
+  waitForDomQuiet,
   showHandoffCard,
   hideHandoffCard,
   startDemoRecorder,
@@ -2356,6 +2706,7 @@ const bb = {
   hasText,
   focus: focusRef,
   describe: describeRef,
+  actionMeta,
   locate,
   queryElement,
   queryAll,
@@ -2371,6 +2722,32 @@ const bb = {
     navigationTiming: readNavigationTiming(),
   }),
 };
+
+export function readNavigationTiming(): {
+  ttfbMs: number;
+  networkMs: number;
+  domContentLoadedMs: number | null;
+  loadEventMs: number | null;
+  transferSize: number;
+  protocol: string;
+} | undefined {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (!nav) return undefined;
+    const ttfbMs = Math.max(0, Math.round(nav.responseStart - nav.startTime));
+    const networkMs = Math.max(ttfbMs, Math.round(nav.responseEnd - nav.startTime));
+    const domContentLoadedMs =
+      nav.domContentLoadedEventEnd > 0 ? Math.max(0, Math.round(nav.domContentLoadedEventEnd - nav.startTime)) : null;
+    const loadEventMs =
+      nav.loadEventEnd > 0 ? Math.max(0, Math.round(nav.loadEventEnd - nav.startTime)) : null;
+    const transferSize =
+      typeof nav.transferSize === 'number' && Number.isFinite(nav.transferSize) ? Math.max(0, nav.transferSize) : 0;
+    const protocol = typeof nav.nextHopProtocol === 'string' ? nav.nextHopProtocol : '';
+    return { ttfbMs, networkMs, domContentLoadedMs, loadEventMs, transferSize, protocol };
+  } catch {
+    return undefined;
+  }
+}
 
 export type ContentApi = typeof bb;
 

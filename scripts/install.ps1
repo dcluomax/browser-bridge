@@ -66,26 +66,52 @@ if ($LASTEXITCODE -ne 0) { throw 'Rust release build failed.' }
 
 $hostBin = Join-Path $rustDir 'target\release\BrowserBridge.exe'
 
-# Browsers reconnect automatically; stop matching running hosts right before replacing the binary.
+# Hot-swap binary on Windows NTFS without killing active browser native-host / MCP pipes:
+# Windows allows renaming a running .exe while keeping its open image & named pipes alive!
 New-Item -ItemType Directory -Path $appDir -Force | Out-Null
-for ($attempt = 1; $attempt -le 3; $attempt++) {
-    $running = Get-CimInstance Win32_Process -Filter "Name = 'BrowserBridge.exe'" |
-        Where-Object { $_.ExecutablePath -eq (Join-Path $appDir 'BrowserBridge.exe') }
-    foreach ($process in $running) {
-        $live = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
-        if ($live) {
-            Write-Host "Stopping running host process $($process.ProcessId)"
-            Stop-Process -Id $process.ProcessId -Force
-            if (-not $live.WaitForExit(5000)) { throw "Host process $($process.ProcessId) did not exit." }
+$destExe = Join-Path $appDir 'BrowserBridge.exe'
+Get-ChildItem -Path $appDir -Filter 'BrowserBridge.exe.old*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+
+$swappedWithoutKill = $false
+if (Test-Path -LiteralPath $destExe) {
+    $retiredExe = Join-Path $appDir ("BrowserBridge.exe.old.{0}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+    try {
+        Move-Item -LiteralPath $destExe -Destination $retiredExe -Force -ErrorAction Stop
+        Copy-Item -LiteralPath $hostBin -Destination $destExe -Force -ErrorAction Stop
+        Remove-Item -LiteralPath $retiredExe -Force -ErrorAction SilentlyContinue
+        $swappedWithoutKill = $true
+        Write-Host "Hot-swapped BrowserBridge.exe without disconnecting active browser sessions"
+    } catch {
+        if ((-not (Test-Path -LiteralPath $destExe)) -and (Test-Path $retiredExe)) {
+            Move-Item -LiteralPath $retiredExe -Destination $destExe -Force -ErrorAction SilentlyContinue
         }
     }
-    try {
-        Copy-Item -LiteralPath $hostBin -Destination (Join-Path $appDir 'BrowserBridge.exe') -Force
-        break
-    } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
-        if ($attempt -eq 3) { throw }
-        Write-Warning "A host reconnected while files were copied; retrying installation ($attempt/3)."
-        Start-Sleep -Milliseconds 100
+} else {
+    Copy-Item -LiteralPath $hostBin -Destination $destExe -Force
+    $swappedWithoutKill = $true
+}
+
+if (-not $swappedWithoutKill) {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $running = Get-CimInstance Win32_Process -Filter "Name = 'BrowserBridge.exe'" |
+            Where-Object { $_.ExecutablePath -eq $destExe }
+        foreach ($process in $running) {
+            $live = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
+            if ($live) {
+                Write-Host "Stopping running host process $($process.ProcessId)"
+                Stop-Process -Id $process.ProcessId -Force
+                if (-not $live.WaitForExit(5000)) { throw "Host process $($process.ProcessId) did not exit." }
+            }
+        }
+        try {
+            Copy-Item -LiteralPath $hostBin -Destination $destExe -Force
+            break
+        } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($attempt -eq 3) { throw }
+            Write-Warning "A host reconnected while files were copied; retrying installation ($attempt/3)."
+            Start-Sleep -Milliseconds 100
+        }
     }
 }
 

@@ -166,3 +166,27 @@ test('PWA service-worker navigation completes with status=null when no webReques
     watcher.dispose();
   }
 });
+
+test('callFrame accepts forward-compatible newer content.js on disk without script_error loop', async () => {
+  const prevBb = globalThis.__bb;
+  const prevExec = chrome.scripting.executeScript;
+  try {
+    let injectedFiles = 0;
+    chrome.scripting.executeScript = async (req) => {
+      if (req.files) {
+        injectedFiles++;
+        globalThis.__bb = { version: '9.9.9', snapshot: () => ({ text: 'pong-newer' }) };
+        return [];
+      }
+      return [{ frameId: 0, result: await req.func(...req.args) }];
+    };
+    globalThis.__bb = { version: '0.1.0', snapshot: () => ({ text: 'old' }) };
+    const out = await callFrame({ id: 1, url: 'https://example.com' }, 0, 'snapshot');
+    assert.deepEqual(out, { text: 'pong-newer' });
+    assert.equal(injectedFiles, 1);
+  } finally {
+    globalThis.__bb = prevBb;
+    chrome.scripting.executeScript = prevExec;
+  }
+});
+

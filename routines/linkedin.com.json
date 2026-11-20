@@ -1,13 +1,15 @@
 {
   "schemaVersion": 2,
   "domain": "linkedin.com",
-  "verifiedAt": "2026-11-17T17:35:00Z",
-  "updatedAt": "2026-11-17T17:35:00Z",
-  "updatedAtEpochS": 1794936900,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Multi-hop redirect + domcontentloaded navigation: 9,023 ms ERR_ABORTED stall -> ~1,150 ms; ~55 ms <main> profile/job extraction without messaging/ad rail noise",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
-    "hydrationSettleMs": 250,
+    "hydrationSettleMs": 180,
+    "readinessQuietMs": 70,
+    "readinessSelector": "main, [role='main'], .scaffold-layout__main",
     "preferredSnapshotFrames": "top",
     "directHttpBlocked": true,
     "directHttpStatus": 999

@@ -17,7 +17,7 @@ import {
 import { buildAgentPrompt, defaultGuidePath, hostOfUrl, isShareableUrl } from './prompt.ts';
 
 declare const __EXT_VERSION__: string;
-const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.10.1';
+const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.11.1';
 
 export interface PopupState {
   status: string;
@@ -185,6 +185,7 @@ export function PopupApp() {
       mode: effective,
       browser: s?.browser || browserFromPipe || 'edge',
       instanceId: s?.instanceId || instanceFromPipe || '',
+      label: s?.settings.label || undefined,
       agentGuide: s?.agentGuide || '',
     });
   };
@@ -257,7 +258,6 @@ export function PopupApp() {
   const currentMode: 'read' | 'write' = state?.settings.readOnlyMode
     ? 'read'
     : (currentTab?.mode ?? 'read');
-  const activePrompt = currentTab ? promptForTab(currentTab.id, currentTab.url, currentMode, currentTab.title) : '';
   const guidePath = state?.agentGuide || defaultGuidePath();
   const otherTabs = (state?.tabs ?? []).filter((tabItem) => tabItem.id !== currentTab?.id);
   const pendingHandoffs = state?.handoffs ?? [];
@@ -265,20 +265,37 @@ export function PopupApp() {
   const currentDemo = currentTab ? activeDemos.find((d) => d.tabId === currentTab.id) : undefined;
   const isZh = resolvedLocale.startsWith('zh');
   const isJa = resolvedLocale === 'ja';
+  const isZhTw = resolvedLocale === 'zh-TW';
   const uiExtra = {
     handoffWaitTitle: isZh ? '等待人工操作（WAIT）' : isJa ? 'ユーザー操作待ち (WAIT)' : 'Waiting for you (WAIT)',
     continueBtn: isZh ? '继续执行' : isJa ? '続行' : 'Continue',
     cancelBtn: isZh ? '取消' : isJa ? 'キャンセル' : 'Cancel',
     recordingStatus: (n: number) =>
-      isZh ? `正在录制站点流程（已捕获 ${n} 步）` : isJa ? `手順を記録中 (${n} ステップ)` : `Recording site routine (${n} step${n === 1 ? '' : 's'})`,
-    finishDemoBtn: isZh ? '完成并保存' : isJa ? '完了して保存' : 'Finish & Save',
-    teachBtn: isZh ? '录制流程 (Teach)' : isJa ? '手順を記録' : 'Teach Routine',
+      isZh ? `录制中（${n} 步）` : isJa ? `記録中 (${n})` : `Recording (${n})`,
+    finishDemoBtn: isZh ? '完成保存' : isJa ? '完了・保存' : 'Save',
+    teachShort: isZh ? '录制' : isJa ? '記録' : 'Teach',
+    shareRoShort: isZhTw ? '唯讀分享' : isZh ? '只读共享' : isJa ? '読み取り共有' : 'Share Read-Only',
+    shareRwShort: isZhTw ? '讀寫分享' : isZh ? '读写共享' : isJa ? '読み書き共有' : 'Share Read-Write',
+    roPill: isZhTw ? '唯讀 (RO)' : isZh ? '只读 (RO)' : isJa ? '読み取り (RO)' : 'Read-Only',
+    rwPill: isZhTw ? '讀寫 (RW)' : isZh ? '读写 (RW)' : isJa ? '読み書き (RW)' : 'Read-Write',
+    copyShort: isZhTw ? '複製提示詞' : isZh ? '复制提示词' : isJa ? 'プロンプト' : 'Copy Prompt',
+    rowCopyShort: isZhTw ? '複製' : isZh ? '复制' : isJa ? 'コピー' : 'Copy',
+    autoCopyCaption: isZhTw ? '點擊即自動複製提示詞' : isZh ? '点击即自动复制提示词' : isJa ? 'クリックでプロンプトを自動コピー' : 'Auto-copies prompt on share',
+    appearanceLabel: isZhTw ? '外觀主題' : isZh ? '外观主题' : isJa ? 'テーマ' : 'Appearance',
+    diagnosticsLabel: isZhTw ? '連線與指南' : isZh ? '连接与本地指南' : isJa ? '接続とガイド' : 'Connection & Guide',
+    permDetailsSummary: isZhTw ? '權限說明' : isZh ? '只读 / 读写权限说明' : isJa ? '権限について' : 'Read-Only vs Read-Write permissions',
     groupTabsLabel: isZh ? '后台折叠 Agent 标签组' : isJa ? 'Agent タブを背面グループに収納' : 'Collapse agent tabs in background group',
     groupTabsDesc: isZh ? 'Agent 新开标签默认静默放入折叠的 [Agent] 组，不抢焦点' : isJa ? '新規タブを背面の折りたたみグループで開きます' : 'Open agent tabs silently in a collapsed [Agent] group without stealing focus',
     idleCloseLabel: isZh ? '空闲标签自动回收' : isJa ? 'アイドルタブの自動クローズ' : 'Auto-close idle agent tabs',
     idleOff: isZh ? '关闭' : isJa ? 'オフ' : 'Never',
+    connectedCompact: (ver: string, tag: string, sessCount: number) => {
+      const base = `${tag} · v${ver}`;
+      if (sessCount <= 0) return base;
+      return isZhTw ? `${base} · ${sessCount} 連線` : isZh ? `${base} · ${sessCount} 会话` : isJa ? `${base} · ${sessCount} 接続` : `${base} · ${sessCount} active`;
+    },
   };
 
+  const isInUse = (raw: string) => raw.startsWith('in use by ');
   const localizeAccess = (raw: string) => {
     if (raw.startsWith('in use by ')) return t.accessInUse(raw.slice('in use by '.length));
     if (raw === 'shared') return t.accessShared;
@@ -302,7 +319,11 @@ export function PopupApp() {
                 <i className={`bb-dot ${connected ? 'connected' : state?.status === 'error' ? 'error' : ''}`} />
                 <span>
                   {connected
-                    ? t.connectedHost(state.hostVersion, state.settings.label || state.browser || 'Browser')
+                    ? uiExtra.connectedCompact(
+                        state.hostVersion,
+                        state.settings.label || state.browser || 'Browser',
+                        state.sessions.length,
+                      )
                     : state?.status === 'error'
                       ? t.hostDisconnected
                       : t.connecting}
@@ -311,12 +332,6 @@ export function PopupApp() {
             </div>
           </div>
           <div className="bb-header-actions">
-            <Button
-              label={mode === 'light' ? t.dark : t.light}
-              variant="ghost"
-              size="sm"
-              onClick={toggleMode}
-            />
             <Button
               label={view === 'main' ? t.settings : t.back}
               variant={view === 'settings' ? 'secondary' : 'ghost'}
@@ -357,14 +372,24 @@ export function PopupApp() {
 
         {(error || state?.status === 'error') && (
           <div className="bb-error-box" role="alert">
-            {error || (hostMissing ? t.hostMissing : t.connectionError(state?.error ?? ''))}
+            <span>{error || (hostMissing ? t.hostMissing : t.connectionError(state?.error ?? ''))}</span>
+            <Button
+              label={t.reconnect}
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void sendPopup({ type: 'popup:reconnect' }).then(applyState, (err) =>
+                  setError(err instanceof Error ? err.message : String(err)),
+                );
+              }}
+            />
           </div>
         )}
 
         {pendingHandoffs.map((ho) => (
           <div className="bb-upgrade-box" key={ho.id} role="status">
             <span>
-              <strong>{uiExtra.handoffWaitTitle}</strong> · #{ho.tabId}: {ho.message}
+              <strong>{uiExtra.handoffWaitTitle}</strong>: {ho.message}
             </span>
             <div className="bb-row-actions">
               <Button
@@ -413,7 +438,7 @@ export function PopupApp() {
 
         {view === 'main' ? (
           <>
-            <Card padding={4}>
+            <Card padding={3}>
               <div className="bb-hero">
                 {currentTab ? (
                   <>
@@ -423,6 +448,16 @@ export function PopupApp() {
                         <div className="bb-tab-title">{currentTab.title || t.untitledTab}</div>
                         <div className="bb-tab-host">{hostOfUrl(currentTab.url)}</div>
                       </div>
+                      {currentShareable && !currentDemo && !state?.settings.readOnlyMode && (
+                        <Button
+                          label={uiExtra.teachShort}
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            void sendPopup({ type: 'popup:startDemo', tabId: currentTab.id }).then(() => window.close(), () => undefined);
+                          }}
+                        />
+                      )}
                     </div>
 
                     {!currentShareable ? (
@@ -432,7 +467,7 @@ export function PopupApp() {
                         <div className="bb-share-status">
                           <span className={`bb-share-pill ${currentMode === 'write' ? 'rw' : 'ro'}`}>
                             <i />
-                            {currentMode === 'read' ? t.sharedRo(currentTab.id) : t.sharedRw(currentTab.id)}
+                            {currentMode === 'read' ? uiExtra.roPill : uiExtra.rwPill}
                           </span>
                           {!state?.settings.readOnlyMode ? (
                             <button
@@ -448,31 +483,11 @@ export function PopupApp() {
                             <span>{t.globalLockActive}</span>
                           )}
                         </div>
-                        <div
-                          className="bb-prompt-box"
-                          role="button"
-                          tabIndex={0}
-                          title={t.promptBoxTitle}
-                          onClick={() => {
-                            void handleCopyPrompt(currentTab.id, currentTab.url, currentMode, currentTab.title);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              void handleCopyPrompt(currentTab.id, currentTab.url, currentMode, currentTab.title);
-                            }
-                          }}
-                        >
-                          <div className="bb-prompt-label">
-                            <span>{t.promptBoxLabel}</span>
-                            <span>{copiedKey === `tab-${currentTab.id}` ? t.copiedShort : t.clickToCopy}</span>
-                          </div>
-                          <div className="bb-prompt-code">{activePrompt}</div>
-                        </div>
                         <div className="bb-cta-row">
                           <Button
-                            label={copiedKey === `tab-${currentTab.id}` ? t.copiedPromptBtn : t.copyPromptBtn}
+                            label={copiedKey === `tab-${currentTab.id}` ? t.copiedPromptBtn : uiExtra.copyShort}
                             variant="primary"
+                            size="sm"
                             onClick={() => {
                               void handleCopyPrompt(currentTab.id, currentTab.url, currentMode, currentTab.title);
                             }}
@@ -480,37 +495,30 @@ export function PopupApp() {
                           <Button
                             label={t.stopSharing}
                             variant="secondary"
+                            size="sm"
                             onClick={() => { void handleShare(currentTab.id, false); }}
                           />
                         </div>
                       </>
                     ) : (
-                      <>
+                      <div className="bb-share-block">
                         <div className="bb-cta-row">
                           <Button
-                            label={t.shareRoAndCopy}
+                            label={copiedKey === `tab-${currentTab.id}` ? t.copiedShort : uiExtra.shareRoShort}
                             variant="primary"
+                            size="sm"
                             onClick={() => { void handleShare(currentTab.id, true, 'read', true); }}
                           />
-                          <Button
-                            label={t.shareRw}
-                            variant="secondary"
-                            onClick={() => { void handleShare(currentTab.id, true, 'write', true); }}
-                          />
+                          {!state?.settings.readOnlyMode && (
+                            <Button
+                              label={uiExtra.shareRwShort}
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => { void handleShare(currentTab.id, true, 'write', true); }}
+                            />
+                          )}
                         </div>
-                        <div className="bb-hint">{t.unsharedHint}</div>
-                      </>
-                    )}
-                    {currentShareable && !currentDemo && !state?.settings.readOnlyMode && (
-                      <div className="bb-cta-row" style={{ marginTop: 6 }}>
-                        <Button
-                          label={uiExtra.teachBtn}
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            void sendPopup({ type: 'popup:startDemo', tabId: currentTab.id }).then(() => window.close(), () => undefined);
-                          }}
-                        />
+                        <div className="bb-micro-caption">{uiExtra.autoCopyCaption}</div>
                       </div>
                     )}
                   </>
@@ -521,51 +529,72 @@ export function PopupApp() {
             </Card>
 
             {otherTabs.length > 0 && (
-              <>
+              <section className="bb-shared-section" aria-label={t.otherSharedTabs}>
                 <div className="bb-section-title">
                   <span>{t.otherSharedTabs}</span>
                   <span>{otherTabs.length}</span>
                 </div>
                 <div className="bb-tabs-list">
-                  {otherTabs.map((item) => (
-                    <div className="bb-tab-row" key={item.id}>
-                      <div className="bb-site-monogram">{monogramOf(item.url)}</div>
-                      <button
-                        type="button"
-                        className="bb-tab-jump"
-                        title={t.jumpToTitle(item.url)}
-                        onClick={() => {
-                          void sendPopup({ type: 'popup:activate', tabId: item.id }).then(applyState, () => undefined);
-                        }}
-                      >
-                        <strong>{item.title || item.url}</strong>
-                        <small>
-                          Tab #{item.id} [{item.mode === 'read' ? 'RO' : 'RW'}] · {hostOfUrl(item.url)} · {localizeAccess(item.access)}
-                        </small>
-                      </button>
-                      <div className="bb-row-actions">
-                        <Button
-                          label={copiedKey === `tab-${item.id}` ? t.copiedShort : t.promptShort}
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => { void handleCopyPrompt(item.id, item.url, item.mode, item.title); }}
-                        />
-                        <Button
-                          label={t.removeShare}
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => { void handleShare(item.id, false); }}
-                        />
+                  {otherTabs.map((item) => {
+                    const isRw = item.mode !== 'read' && !state?.settings.readOnlyMode;
+                    return (
+                      <div className="bb-tab-row" key={item.id}>
+                        <div className="bb-site-monogram bb-site-monogram-sm">{monogramOf(item.url)}</div>
+                        <button
+                          type="button"
+                          className="bb-tab-jump"
+                          onClick={() => {
+                            void sendPopup({ type: 'popup:activate', tabId: item.id }).then(applyState, () => undefined);
+                          }}
+                        >
+                          <strong>{item.title || hostOfUrl(item.url) || item.url}</strong>
+                          <small>
+                            <span className={`bb-mode-tag ${isRw ? 'rw' : 'ro'}`}>{isRw ? 'RW' : 'RO'}</span>
+                            <span>{hostOfUrl(item.url)}</span>
+                            {isInUse(item.access) && <span>· {localizeAccess(item.access)}</span>}
+                          </small>
+                        </button>
+                        <div className="bb-row-actions">
+                          <Button
+                            label={copiedKey === `tab-${item.id}` ? '✓' : uiExtra.rowCopyShort}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => { void handleCopyPrompt(item.id, item.url, item.mode, item.title); }}
+                          />
+                          <Button
+                            label={t.removeShare}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => { void handleShare(item.id, false); }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              </>
+              </section>
             )}
           </>
         ) : (
-          <Card padding={4}>
+          <Card padding={3}>
             <div className="bb-settings">
+              <div className="bb-field-block" role="group" aria-label={uiExtra.appearanceLabel}>
+                <span className="bb-field-label">{uiExtra.appearanceLabel}</span>
+                <div className="bb-lang-grid">
+                  <Button
+                    label={t.light}
+                    variant={mode === 'light' ? 'primary' : 'secondary'}
+                    size="sm"
+                    onClick={() => { if (mode !== 'light') toggleMode(); }}
+                  />
+                  <Button
+                    label={t.dark}
+                    variant={mode === 'dark' ? 'primary' : 'secondary'}
+                    size="sm"
+                    onClick={() => { if (mode !== 'dark') toggleMode(); }}
+                  />
+                </div>
+              </div>
               <div className="bb-field-block" role="group" aria-label={t.languageLabel}>
                 <span className="bb-field-label">{t.languageLabel}</span>
                 <div className="bb-lang-grid">
@@ -651,40 +680,33 @@ export function PopupApp() {
                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                 }}
               />
+              <details className="bb-help-details">
+                <summary>{uiExtra.permDetailsSummary}</summary>
+                <p>{t.unsharedHint}</p>
+              </details>
+              <div className="bb-settings-diag" role="group" aria-label={uiExtra.diagnosticsLabel}>
+                <Button
+                  label={copiedKey === 'guide' ? t.copiedGuidePath : t.copyGuidePath}
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void copyText(guidePath).then(() => flashCopied('guide'));
+                  }}
+                />
+                <Button
+                  label={t.reconnect}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    void sendPopup({ type: 'popup:reconnect' }).then(applyState, (err) =>
+                      setError(err instanceof Error ? err.message : String(err)),
+                    );
+                  }}
+                />
+              </div>
             </div>
           </Card>
         )}
-
-        <footer className="bb-footer">
-          <div className="bb-footer-left">
-            <span>{state?.sessions.length ? t.activeSessions(state.sessions.length) : t.noSessions}</span>
-            <span>·</span>
-            <button
-              type="button"
-              className="bb-link-btn"
-              title={t.copyGuideTitle(guidePath)}
-              onClick={() => {
-                void copyText(guidePath).then(() => flashCopied('guide'));
-              }}
-            >
-              {copiedKey === 'guide' ? t.copiedGuidePath : t.copyGuidePath}
-            </button>
-          </div>
-          <div className="bb-footer-right">
-            <button
-              type="button"
-              className="bb-link-btn"
-              onClick={() => {
-                void sendPopup({ type: 'popup:reconnect' }).then(applyState, (err) =>
-                  setError(err instanceof Error ? err.message : String(err)),
-                );
-              }}
-            >
-              {t.reconnect}
-            </button>
-            <span>v{state?.extensionVersion ?? POPUP_VERSION}</span>
-          </div>
-        </footer>
       </div>
     </Theme>
   );

@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` / `v0.10.0` → `v0.10.1`)
+# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.0` → `v0.11.1`)
 
-**Browser Bridge `v0.10.1`** expands the timestamped `schemaVersion: 2` site optimization catalog to **24 built-in playbooks (`routines/*.json`)**, formalizes the **3rd-digit (`PATCH`, `0.10.Z`) Website-Optimization Policy** ([[Versioning and Site JSON Policy]]), adds Chromium MV3 `injectImmediately: true` + multi-hop redirect tracking + `1,500 ms` child-frame bounds delivering **15×–1,800× network-excluded speedups**, and retains all `0.10.0` additions (`browser_handoff`, `browser_demonstrate`, `browser_allowlist`, `browser_network`, `browser_console`, collapsed `[Agent]` background tab groups).
+**Browser Bridge `v0.11.1`** hardens **Quality-Constrained `SiteLearner` v2** (read-safe semantic relocation, atomic cross-process playbook sync, route-scoped `>= 85%` content-completeness bandit, ordered wait modes, `k >= 3` hysteresis, clean-streak settle decay, and `_noLearn` benchmark isolation) and **Event-Driven DOM Readiness (`waitForDomQuiet`)**, adds **Bounded URL-Redacted Activity Logging (`BrowserBridge activity`)**, **Zero-Downtime NTFS Hot-Swap Installation**, **Ultra-Compact Query-Safe Share Prompts**, **`browser_batch` / `Page.batch(...)`**, and **Auto-Routine Trajectory Distillation** across **24 built-in timestamped playbooks (`routines/*.json`)**.
 
 ---
 

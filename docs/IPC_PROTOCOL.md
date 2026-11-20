@@ -54,12 +54,12 @@ The host responds with `bridgeHello`:
 {
   "type": "bridgeHello",
   "protocol": 1,
-  "hostVersion": "0.10.1",
+  "hostVersion": "0.11.1",
   "session": "s-1",
   "browser": {
     "browser": "edge",
     "browserVersion": "136.0",
-    "extensionVersion": "0.10.1",
+    "extensionVersion": "0.11.1",
     "instanceId": "a1b2c3d4e5f6",
     "label": "Work"
   }

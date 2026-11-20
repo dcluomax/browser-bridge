@@ -1,11 +1,13 @@
 {
   "schemaVersion": 2,
   "domain": "news.ycombinator.com",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "Flattens nested border=0 layout tables so all 30 front-page stories fit cleanly in 19.4 KB with zero snapshot truncation",
   "accessProfile": {
+    "readinessQuietMs": 60,
+    "readinessSelector": "#hnmain, table.itemlist, tr.athing",
     "preferredSnapshotFrames": "top"
   },
   "notes": [

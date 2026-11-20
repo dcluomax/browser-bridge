@@ -198,6 +198,7 @@ async function handlePopup(message: {
   mode?: AccessMode;
   action?: 'continue' | 'cancel' | 'finish';
   routineName?: string;
+  url?: string;
   patch?: Partial<Settings>;
 }): Promise<unknown> {
   await ensureReady();

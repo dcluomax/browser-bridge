@@ -16,6 +16,10 @@ BrowserBridge routines
 BrowserBridge routines app.diagrams.net
 BrowserBridge routines example.com --reset-profile
 
+# Inspect recent URL-redacted session activity (origin+path only, <=500 entries)
+BrowserBridge activity
+BrowserBridge activity --limit 20 --json
+
 # Inspect or switch GitHub Copilot MCP read-only mode
 BrowserBridge mcp-mode status
 BrowserBridge mcp-mode read-only

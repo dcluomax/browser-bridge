@@ -8,10 +8,10 @@ use tokio::sync::{Mutex, mpsc};
 
 const INSTRUCTIONS: &str = "Browser Bridge controls the user's own Edge, Chrome or Firefox through an extension. \
 Read pages with browser_snapshot (element refs like e12; SVG diagram shapes appear as role=\"shape\") or browser_get_text, \
-then act with browser_click, browser_drag, browser_type, browser_fill_form, browser_select_option and browser_press_key. \
-Site Memory & Routines: Browser Bridge automatically records site pitfalls/detours and exposes fast multi-step routines per domain \
-(check [Site Memory & Fast Routines] in snapshots or browser_routine_list; run with browser_routine_run; save newly learned site workflows/tips with browser_routine_save). \
-Refs expire when the page changes; take a new snapshot or use a locator. \
+then act with browser_click, browser_drag, browser_type, browser_fill_form, browser_select_option, browser_press_key, or browser_batch (to execute multi-step sequences such as repeated combobox searches/clicks in 1 fast call without extra LLM roundtrips). \
+Site Memory & Auto-Learned Routines: Browser Bridge automatically learns from errors and automatically distills multi-step workflows into reusable routines per domain \
+(check [Site Memory & Fast Routines] in snapshots or browser_routine_list; run with browser_routine_run; save custom site workflows/tips with browser_routine_save). \
+Refs stay stable across locate/snapshot on the same page and self-heal across same-URL DOM re-renders, expiring on navigation. \
 You can only use tabs the user shared or tabs you opened. Confirm with the user before submitting forms, sending messages, purchasing, deleting, or changing account settings. \
 Stop and hand over to the user for logins, MFA, CAPTCHAs and other human verification.";
 
@@ -220,6 +220,7 @@ const READ_SAFE_MCP_TOOLS: &[&str] = &[
     "browser_webmcp_call",
     "browser_routine_list",
     "browser_routine_run",
+    "browser_batch",
 ];
 
 fn tool_definitions(opts: McpOptions) -> Vec<Value> {
@@ -604,6 +605,41 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
                     "armNext": { "type": "boolean", "default": false },
                     "tabId": { "type": "integer" }
                 }
+            }
+        }),
+        json!({
+            "name": "browser_batch",
+            "description": if opts.read_only {
+                "Executes an ordered batch of read-only steps (locate, query/get_element, snapshot, text, waitFor, screenshot, GET fetch) in a single fast native loop inside this session's tab lease."
+            } else {
+                "Executes an ordered multi-step sequence (click, type, check, select, press, waitFor, snapshot, fetch, etc.) in a single fast native loop inside this session's tab lease without extra LLM roundtrips. Supports saveAs outputs ({{var}} interpolation across steps) and optional saveAsRoutine persistence."
+            },
+            "annotations": { "readOnlyHint": opts.read_only },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "description": "1-100 ordered steps executed sequentially in the target tab.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "op": { "type": "string", "description": "click, doubleClick, drag, type, fill, press, select, check, scroll, waitFor, locate, query, snapshot, text, screenshot, fetch, navigate, history, webmcp.call, dialog" },
+                                "params": { "type": "object", "description": "Step parameters (e.g. locator/ref, text, checked, values, key); supports {{var}} and {{url.*}} interpolation." },
+                                "saveAs": { "type": "string", "description": "Optional key to capture step output into outputs.<saveAs> and {{<saveAs>}} for subsequent steps." },
+                                "optional": { "type": "boolean", "default": false, "description": "Continue even if this step fails." }
+                            },
+                            "required": ["op"]
+                        }
+                    },
+                    "variables": { "type": "object", "description": "Optional initial {{key}} template variables." },
+                    "stopOnError": { "type": "boolean", "default": true, "description": "Abort on first non-optional step error (default true)." },
+                    "saveAsRoutine": { "type": "string", "description": "Optional routine name to persist into Site Memory if the batch succeeds." },
+                    "description": { "type": "string", "description": "Optional description when saveAsRoutine is specified." },
+                    "tabId": { "type": "integer" },
+                    "browser": { "type": "string" }
+                },
+                "required": ["steps"]
             }
         }),
         json!({
@@ -1831,6 +1867,41 @@ async fn call_tool(
                 Err(err) => fail(err),
             }
         }
+        "browser_batch" => {
+            let Some(raw_steps) = args.get("steps") else {
+                return text_err("steps array is required. [bad_request]");
+            };
+            let steps: Vec<routines::RoutineStep> = match serde_json::from_value(raw_steps.clone()) {
+                Ok(s) => s,
+                Err(e) => return text_err(format!("Invalid batch steps schema: {e} [bad_request]")),
+            };
+            let variables = args
+                .get("variables")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let stop_on_error = args.get("stopOnError").and_then(Value::as_bool).unwrap_or(true);
+            let save_name = args
+                .get("saveAsRoutine")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let save_desc = args.get("description").and_then(Value::as_str).unwrap_or("");
+            let tab_id = args.get("tabId").and_then(Value::as_i64);
+            let batch_opts = routines::BatchRunOptions {
+                steps: &steps,
+                variables: &variables,
+                tab_id,
+                browser,
+                enforce_read_only: opts.read_only,
+                stop_on_error,
+                save_as_routine: save_name.map(|n| (n, save_desc)),
+            };
+            match routines::execute_batch(client, batch_opts).await {
+                Ok(res) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_else(|_| res.to_string())),
+                Err(msg) => text_err(msg),
+            }
+        }
         "browser_routine_list" => {
             if args.get("all").and_then(Value::as_bool) == Some(true) {
                 let all = routines::list_all_playbooks();
@@ -1840,8 +1911,14 @@ async fn call_tool(
                 Ok(v) => v,
                 Err(msg) => return text_err(format!("{msg} [bad_request]")),
             };
+            let flush = args.get("flushAutoRoutines").and_then(Value::as_bool).unwrap_or(false);
             let pb: routines::SitePlaybook = match client
-                .send("site.profile", json!({ "domain": domain }), browser, Duration::from_secs(3))
+                .send(
+                    "site.profile",
+                    json!({ "domain": domain, "flushAutoRoutines": flush }),
+                    browser,
+                    Duration::from_secs(3),
+                )
                 .await
             {
                 Ok((val, _)) => serde_json::from_value(val)
@@ -2173,11 +2250,36 @@ mod tests {
         assert!(names.contains(&"browser_snapshot"));
         assert!(names.contains(&"browser_screenshot"));
         assert!(names.contains(&"browser_webmcp_list"));
+        assert!(names.contains(&"browser_batch"));
         assert!(!names.contains(&"browser_click"));
         assert!(!names.contains(&"browser_type"));
         assert!(!names.contains(&"browser_navigate"));
         assert!(!names.contains(&"browser_evaluate"));
         assert!(!names.contains(&"browser_upload_file"));
+
+        let blocked_batch = handle_rpc(
+            &json!(99),
+            "tools/call",
+            &json!({
+                "name": "browser_batch",
+                "arguments": {
+                    "steps": [
+                        { "op": "snapshot", "params": {} },
+                        { "op": "click", "params": { "ref": "e1" } }
+                    ]
+                }
+            }),
+            ro_opts,
+            &client,
+        )
+        .await;
+        assert_eq!(blocked_batch["result"]["isError"], json!(true));
+        assert!(
+            blocked_batch["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[read_only]")
+        );
 
         let blocked = handle_rpc(
             &json!(2),

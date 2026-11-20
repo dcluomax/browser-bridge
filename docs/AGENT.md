@@ -1,11 +1,13 @@
 # Browser Bridge — Shared Tab Agent Guide
 
-The user shared a live, logged-in browser tab with you (`tab <TAB_ID>` in `<BROWSER> <INSTANCE>`).
+The user shared a live, logged-in browser tab with you using a compact prompt such as:
+`[Browser Bridge #<TAB_ID> RO|RW <BROWSER>[:<LABEL>]] <Title> (<host>) [focus: "..."]`
+(or `tab <TAB_ID>` in `<BROWSER> <INSTANCE>`).
 
-## Safety & Access Modes (`[read-only]` vs `[read-write]`)
-1. Act **only** on the shared `tabId`.
-2. **If the prompt or tab says `[read-only]` (or MCP is in `--read-only` mode)**: ONLY inspect (`browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element`, `browser_screenshot`, `browser_webmcp_list`, or `readOnlyHint=true` WebMCP tools). Do **not** click, type, upload, or navigate.
-3. **If `[read-write]`**: confirm with the user before submitting forms, sending messages, making purchases, or changing account settings. Hand logins, MFA, and CAPTCHAs back to the user.
+## Safety & Access Modes (`RO` / `[read-only]` vs `RW` / `[read-write]`)
+1. Act **only** on the shared `tabId` (`#<TAB_ID>`).
+2. **If the prompt says `RO` or `[read-only]` (or MCP is in `--read-only` mode)**: ONLY inspect (`browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element`, `browser_screenshot`, `browser_webmcp_list`, read-only `browser_routine_run` / `browser_batch`, or `readOnlyHint=true` WebMCP tools). Do **not** click, type, upload, or navigate.
+3. **If `RW` or `[read-write]`**: confirm with the user before submitting forms, sending messages, making purchases, or changing account settings. Hand logins, MFA, and CAPTCHAs back to the user.
 
 ## 1. Use MCP Tools, Site Routines & WebMCP (preferred when `browser-bridge` MCP is available)
 1. Select browser instance: `browser_status({ "browser": "<INSTANCE>" })`
@@ -18,6 +20,8 @@ The user shared a live, logged-in browser tab with you (`tab <TAB_ID>` in `<BROW
 3. Interact (`[read-write]` only — pass `tabId` + `ref` or `locator`):
    - `browser_click`, `browser_drag`, `browser_type`, `browser_fill_form`, `browser_select_option`, `browser_set_checked`
    - `browser_press_key`, `browser_scroll`, `browser_upload_file`, `browser_handle_dialog`, `browser_wait_for`
+   - **Multi-Step Batch (`browser_batch`)**: execute repeated combobox searches, multi-control form setups, or chained reads in **1 single call** inside your active tab lease (`steps: [{ op, params, saveAs, optional }, ...]`), avoiding 10+ LLM roundtrips!
+   - **Auto-Routine Learning**: Browser Bridge automatically distills completed multi-step workflows (stripping failed detours, promoting `ref`s to semantic `locator`s, and scrubbing secrets) into `[auto]` routines in Site Memory; element `ref`s stay stable across `locate`/`snapshot` and self-heal across same-URL SPA re-renders.
    - **Handoff & Demonstrate**: call `browser_handoff` when login, 2FA, CAPTCHA/Cloudflare, or payment is needed (pops a Continue card with `WAIT` badge); call `browser_demonstrate({ "saveAs": "..." })` to record a user demonstration directly into a reusable Site Routine!
    - **Domain Fence & Diagnostics**: use `browser_allowlist` to fence tabs to `allowedOrigins`; inspect redacted HTTP exchanges with `browser_network` and JS errors with `browser_console`.
    - After discovering a faster workflow or pitfall workaround on a site, persist it via `browser_routine_save` so future tasks skip detours!
@@ -38,6 +42,7 @@ with BrowserBridge(browser="<INSTANCE>") as bridge:
 
 ## 3. Use CLI or Direct IPC (any language, no Python needed)
 - Status JSON: `"{{HOST_EXE}}" status --json`
+- Recent redacted session activity (`<= 500` entries, zero query tokens): `"{{HOST_EXE}}" activity --limit 25`
 - Save screenshot: `"{{HOST_EXE}}" screenshot shot.png --tab <TAB_ID> --browser <INSTANCE> --full-page`
 - Stdio JSON-line RPC (`"{{HOST_EXE}}" rpc`):
   `{"id":1,"method":"page.snapshot","params":{"tabId":<TAB_ID>,"browser":"<INSTANCE>"}}`

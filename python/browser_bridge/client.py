@@ -1060,14 +1060,16 @@ class Page(_FinderScope):
             return {k: Page._interpolate_step(v, variables) for k, v in template.items()}
         return template
 
-    def routines(self, *, domain: str | None = None) -> dict[str, Any]:
+    def routines(self, *, domain: str | None = None, flush_auto: bool = False) -> dict[str, Any]:
         self.browser.start()
         if isinstance(self.browser._transport, _Transport):
             target_domain = domain or urllib.parse.urlsplit(self.url).hostname or ""
-            return self.browser.call("routine.list", {"domain": target_domain})
+            return self.browser.call("routine.list", {"domain": target_domain, "flushAutoRoutines": bool(flush_auto)})
         params: dict[str, Any] = {"tabId": self.tab_id}
         if domain:
             params["domain"] = domain
+        if flush_auto:
+            params["flushAutoRoutines"] = True
         return self.browser.call("site.profile", params)
 
     def access_profile(self, *, domain: str | None = None) -> dict[str, Any]:
@@ -1162,6 +1164,7 @@ class Page(_FinderScope):
                 step_params["doubleClick"] = True
             if method == "page.type" and step.get("optional") and step_params.get("text") == "":
                 continue
+            step_params["_fromRoutine"] = True
             try:
                 res = self._call(method, step_params)
                 steps_run += 1
@@ -1192,6 +1195,154 @@ class Page(_FinderScope):
             "elapsedMs": round((time.perf_counter() - t0) * 1000),
             "stepsExecuted": steps_run,
             "outputs": outputs,
+        }
+
+    def batch(
+        self,
+        steps: list[dict[str, Any]],
+        *,
+        variables: dict[str, Any] | None = None,
+        stop_on_error: bool = True,
+        save_as_routine: str | None = None,
+        description: str = "",
+    ) -> dict[str, Any]:
+        """Executes an ordered multi-step sequence inside this page's active session lease in a single loop."""
+        if not steps:
+            raise BridgeError("bad_request", "steps must contain at least 1 step.")
+        if len(steps) > 100:
+            raise BridgeError("bad_request", "steps must contain at most 100 steps per batch.")
+        if isinstance(self.browser._transport, _Transport):
+            payload: dict[str, Any] = {
+                "tabId": self.tab_id,
+                "steps": steps,
+                "variables": variables or {},
+                "stopOnError": bool(stop_on_error),
+            }
+            if save_as_routine:
+                payload["saveAsRoutine"] = save_as_routine
+                payload["description"] = description
+            if self.browser.read_only:
+                payload["readOnly"] = True
+            return self.browser.call("page.batch", payload)
+
+        op_map = {
+            "click": "page.click", "doubleClick": "page.click", "dblclick": "page.click",
+            "drag": "page.drag", "hover": "page.hover", "type": "page.type", "fill": "page.fill",
+            "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
+            "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
+            "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
+            "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
+            "fetch": "page.fetch", "page.fetch": "page.fetch",
+            "navigate": "page.navigate", "goto": "page.navigate", "history": "page.history", "dialog": "page.dialog",
+            "webmcp.list": "page.webmcp.list", "webmcp.call": "page.webmcp.call",
+        }
+        read_safe = {
+            "page.snapshot", "page.text", "page.locate", "page.query", "page.queryAll",
+            "page.waitFor", "page.screenshot", "page.fetch", "page.webmcp.list",
+        }
+        all_read_safe = True
+        for idx, st in enumerate(steps):
+            op = st.get("op", "")
+            method = op_map.get(op, op)
+            step_ro = method in read_safe and (
+                method != "page.fetch" or str((st.get("params") or {}).get("method", "GET")).upper() in {"GET", "HEAD"}
+            )
+            all_read_safe = all_read_safe and step_ro
+            if self.browser.read_only and not step_ro:
+                raise BridgeError("read_only", f"Batch step {idx + 1} ({method}) is not allowed in read-only mode.")
+
+        vars_map: dict[str, Any] = dict(variables or {})
+        if "{{url." in json.dumps(steps) or save_as_routine:
+            cur_url = self.url
+            parsed_u = urllib.parse.urlsplit(cur_url)
+            vars_map.setdefault("url.href", cur_url)
+            if parsed_u.scheme and parsed_u.netloc:
+                vars_map.setdefault("url.origin", f"{parsed_u.scheme}://{parsed_u.netloc}")
+                vars_map.setdefault("url.cleanPath", f"{parsed_u.scheme}://{parsed_u.netloc}{parsed_u.path.rstrip('/')}")
+            segs = [s for s in parsed_u.path.split("/") if s]
+            if "d" in segs:
+                d_idx = segs.index("d")
+                if d_idx + 1 < len(segs):
+                    vars_map.setdefault("url.docId", segs[d_idx + 1])
+            if parsed_u.hostname and parsed_u.hostname.lower().endswith("arxiv.org") and len(segs) >= 2 and segs[0] in {"abs", "pdf", "html"}:
+                arxiv_id = "/".join(segs[1:])
+                if arxiv_id.endswith(".pdf"):
+                    arxiv_id = arxiv_id[:-4]
+                vars_map.setdefault("url.arxivId", arxiv_id)
+            if parsed_u.hostname and parsed_u.hostname.lower() == "github.com" and len(segs) >= 2:
+                vars_map.setdefault("url.repo", f"{segs[0]}/{segs[1]}")
+
+        t0 = time.perf_counter()
+        outputs: dict[str, Any] = {}
+        step_log: list[dict[str, Any]] = []
+        succeeded = 0
+        failed = 0
+        for idx, step in enumerate(steps):
+            op = step["op"]
+            method = op_map.get(op, op)
+            step_params = dict(self._interpolate_step(step.get("params") or {}, vars_map))
+            strip_html = bool(step_params.pop("stripHtml", False)) if method == "page.fetch" else False
+            if op in {"doubleClick", "dblclick"}:
+                step_params["doubleClick"] = True
+            if method == "page.type" and step.get("optional") and step_params.get("text") == "":
+                step_log.append({"step": idx + 1, "op": op, "skipped": True})
+                continue
+            if save_as_routine:
+                step_params["_fromRoutine"] = True
+            s0 = time.perf_counter()
+            try:
+                res = self._call(method, step_params)
+                succeeded += 1
+                save_key = step.get("saveAs")
+                if save_key:
+                    if method == "page.fetch" and isinstance(res, dict) and isinstance(res.get("data"), str):
+                        raw_txt = base64.b64decode(res["data"]).decode("utf-8", errors="replace")
+                        if strip_html:
+                            import html as _html
+                            import re as _re
+                            no_scripts = _re.sub(r"(?is)<(?:script|style|head)\b.*?</(?:script|style|head)>", "", raw_txt)
+                            with_breaks = _re.sub(r"(?i)</?(?:p|div|br|li|tr|h[1-6]|table)\b[^>]*>", "\n", no_scripts)
+                            no_tags = _re.sub(r"<[^>]+>", "", with_breaks)
+                            lines_clean = [ln.strip() for ln in _html.unescape(no_tags).splitlines()]
+                            val: Any = _re.sub(r"\n{3,}", "\n\n", "\n".join(lines_clean)).strip()
+                        else:
+                            val = raw_txt
+                    else:
+                        val = res["value"] if isinstance(res, dict) and "value" in res else (res["text"] if isinstance(res, dict) and "text" in res else res)
+                    outputs[save_key] = val
+                    vars_map[save_key] = val
+                step_log.append({"step": idx + 1, "op": op, "ok": True, "ms": round((time.perf_counter() - s0) * 1000)})
+            except BridgeError as exc:
+                if step.get("optional"):
+                    step_log.append({"step": idx + 1, "op": op, "ok": False, "optionalIgnored": True, "error": str(exc)})
+                else:
+                    failed += 1
+                    step_log.append({"step": idx + 1, "op": op, "ok": False, "ms": round((time.perf_counter() - s0) * 1000), "error": str(exc)})
+                    if stop_on_error:
+                        raise
+        saved_name: str | None = None
+        if failed == 0 and save_as_routine and save_as_routine.strip():
+            r_name = save_as_routine.strip()
+            self.save_routine(
+                routine={
+                    "name": r_name,
+                    "description": description.strip() or f"Saved {len(steps)}-step batch routine.",
+                    "readOnly": all_read_safe,
+                    "source": "batch_saved",
+                    "params": {},
+                    "steps": steps,
+                }
+            )
+            saved_name = r_name
+        return {
+            "tabId": self.tab_id,
+            "elapsedMs": round((time.perf_counter() - t0) * 1000),
+            "stepsExecuted": len(step_log),
+            "succeeded": succeeded,
+            "failed": failed,
+            "steps": step_log,
+            "outputs": outputs,
+            "savedRoutine": saved_name,
         }
 
     def save_routine(

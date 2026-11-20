@@ -1,6 +1,6 @@
 # Browser Bridge Python SDK
 
-The Python SDK (`0.10.1`) connects directly to the Browser Bridge Named Pipe
+The Python SDK (`0.11.1`) connects directly to the Browser Bridge Named Pipe
 (Windows) or Unix Domain Socket (macOS / Linux) with zero intermediate child
 process (`~1.1 ms` median roundtrip). Any external language can connect directly over the
 same open JSON-line IPC protocol, or optionally launch `BrowserBridge rpc` over

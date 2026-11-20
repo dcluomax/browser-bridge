@@ -1,5 +1,3 @@
-# Test fixtures, not credentials. Both lines hold the public jwt.io sample token
-# (HS256, sub "1234567890") that the redaction tests and the E2E fixture must mask.
-# Format: <commit>:<file>:<rule>:<line> (gitleaks fingerprint of the introducing commit).
-3fbbabf5d64852e4402bcfb386cfccc911eca8b1:extension/test/allowlist.test.ts:jwt:29
+# Synthetic dummy JWT fixtures ("sub":"1234567890", base64("signature")) used solely to test JWT redaction in v0.10.0:
 3fbbabf5d64852e4402bcfb386cfccc911eca8b1:e2e/run.mjs:jwt:160
+3fbbabf5d64852e4402bcfb386cfccc911eca8b1:extension/test/allowlist.test.ts:jwt:29

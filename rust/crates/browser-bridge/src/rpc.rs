@@ -102,7 +102,19 @@ pub async fn handle_line(line: &str, client: &BridgeClient) -> Value {
 
     if method == "routine.list" {
         if let Some(d) = params.get("domain").and_then(Value::as_str) {
-            if let Ok((live_pb, _)) = client.send("site.profile", json!({ "domain": d }), selector, Duration::from_secs(3)).await {
+            let flush = params
+                .get("flushAutoRoutines")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if let Ok((live_pb, _)) = client
+                .send(
+                    "site.profile",
+                    json!({ "domain": d, "flushAutoRoutines": flush }),
+                    selector,
+                    Duration::from_secs(3),
+                )
+                .await
+            {
                 return json!({ "id": id, "ok": true, "result": live_pb });
             }
             let pb = bridge_core::routines::resolve_playbook(d)
@@ -144,6 +156,39 @@ pub async fn handle_line(line: &str, client: &BridgeClient) -> Value {
         return match bridge_core::routines::execute_routine(client, &routine, &args_obj, tab_id, selector, ro).await {
             Ok(res) => json!({ "id": id, "ok": true, "result": res }),
             Err(msg) => err_resp(id, if msg.contains("[read_only]") { "read_only" } else { "routine_failed" }, &msg),
+        };
+    }
+
+    if matches!(method, "page.batch" | "routine.batch") {
+        let Some(raw_steps) = params.get("steps") else {
+            return err_resp(id, "bad_request", "page.batch requires 'steps' array.");
+        };
+        let steps: Vec<bridge_core::routines::RoutineStep> = match serde_json::from_value(raw_steps.clone()) {
+            Ok(s) => s,
+            Err(e) => return err_resp(id, "bad_request", &format!("Invalid batch steps schema: {e}")),
+        };
+        let vars = params.get("variables").and_then(Value::as_object).cloned().unwrap_or_default();
+        let tab_id = params.get("tabId").and_then(Value::as_i64);
+        let ro = params.get("readOnly").and_then(Value::as_bool) == Some(true);
+        let stop_on_error = params.get("stopOnError").and_then(Value::as_bool).unwrap_or(true);
+        let save_name = params
+            .get("saveAsRoutine")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let save_desc = params.get("description").and_then(Value::as_str).unwrap_or("");
+        let batch_opts = bridge_core::routines::BatchRunOptions {
+            steps: &steps,
+            variables: &vars,
+            tab_id,
+            browser: selector,
+            enforce_read_only: ro,
+            stop_on_error,
+            save_as_routine: save_name.map(|n| (n, save_desc)),
+        };
+        return match bridge_core::routines::execute_batch(client, batch_opts).await {
+            Ok(res) => json!({ "id": id, "ok": true, "result": res }),
+            Err(msg) => err_resp(id, if msg.contains("[read_only]") { "read_only" } else { "batch_failed" }, &msg),
         };
     }
 

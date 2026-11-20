@@ -1,12 +1,14 @@
 {
   "schemaVersion": 2,
   "domain": "diagrams.net",
-  "verifiedAt": "2026-11-17T09:45:00Z",
-  "updatedAt": "2026-11-17T09:45:00Z",
-  "updatedAtEpochS": 1794908700,
+  "verifiedAt": "2026-11-18T19:50:00Z",
+  "updatedAt": "2026-11-18T19:50:00Z",
+  "updatedAtEpochS": 1795031400,
   "speedupSummary": "PWA #fragment open 30,000 ms timeout -> 4,960 ms; full <mxGraphModel> XML read/write in ~660 ms / ~870 ms; shape insert 3,740 ms -> 1,640 ms",
   "accessProfile": {
     "serviceWorkerNavigation": true,
+    "readinessQuietMs": 75,
+    "readinessSelector": ".geDiagramContainer, .geMenubarContainer",
     "submitSettleMs": 80
   },
   "notes": [

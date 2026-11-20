@@ -157,7 +157,7 @@ function serveFixtures() {
       return;
     }
     if (url.pathname === '/diag-probe.html') {
-      const sampleJwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl';
+      const sampleJwt = ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'c2lnbmF0dXJl'].join('.');
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>Diag Probe</title>
         <input id="safe-note" placeholder="Note">
         <input id="secret-pw" type="password" placeholder="Password">
@@ -428,6 +428,19 @@ async function main() {
 
     const back = await client.call('browser_history', { action: 'back' });
     check('browser_history back', !back.isError && back.text.includes('/form.html'), back.text);
+
+    const batchRes = await client.call('browser_batch', {
+      variables: { batchUser: 'Margaret Hamilton' },
+      steps: [
+        { op: 'type', params: { locator: { steps: [{ kind: 'label', value: 'Name' }] }, text: '{{batchUser}}', clear: true } },
+        { op: 'query', params: { operation: 'value', locator: { steps: [{ kind: 'label', value: 'Name' }] } }, saveAs: 'batchVal' },
+      ],
+    });
+    check(
+      'browser_batch executes multi-step sequence in one MCP call',
+      !batchRes.isError && batchRes.text.includes('Margaret Hamilton'),
+      batchRes.text,
+    );
 
     const navigated = await client.call('browser_navigate', { url: `${base}/second.html` });
     check('browser_navigate', !navigated.isError && navigated.text.includes('Second page'), navigated.text);
