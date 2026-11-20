@@ -4,6 +4,7 @@ export interface SharedTabPromptInput {
   title?: string;
   browser: string;
   instanceId: string;
+  label?: string;
   agentGuide?: string;
   mode?: 'read' | 'write';
   focus?: string;
@@ -16,11 +17,26 @@ export function defaultGuidePath(userAgent = ''): string {
     : '~/.browser-bridge/AGENT.md';
 }
 
-export function hostOfUrl(url: string): string {
+function localFileBasename(parsed: URL): string {
+  const segs = parsed.pathname.split('/').filter(Boolean);
+  const raw = segs[segs.length - 1] || 'local-file';
   try {
-    return new URL(url).hostname || url;
+    return decodeURIComponent(raw) || 'local-file';
   } catch {
-    return url;
+    return raw;
+  }
+}
+
+export function hostOfUrl(url: string): string {
+  const trimmed = (url ?? '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'file:') return localFileBasename(parsed);
+    if (parsed.protocol === 'about:') return `${parsed.protocol}${parsed.pathname}`;
+    return parsed.hostname || trimmed.split(/[?#]/)[0];
+  } catch {
+    return trimmed.split(/[?#]/)[0].slice(0, 60);
   }
 }
 
@@ -37,17 +53,67 @@ export function isShareableUrl(url: string | undefined): boolean {
   return true;
 }
 
+export function compactUrlForPrompt(rawUrl: string, maxPathChars = 36): string {
+  const trimmed = (rawUrl ?? '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'file:') return localFileBasename(parsed);
+    if (parsed.protocol === 'about:') return `${parsed.protocol}${parsed.pathname}`;
+    const host = (parsed.hostname || trimmed).replace(/^www\./i, '');
+    const cleanPath = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname.replace(/\/+$/, '') : '';
+    if (!cleanPath) return host;
+    const shortPath = cleanPath.length > maxPathChars ? `${cleanPath.slice(0, maxPathChars - 1)}…` : cleanPath;
+    return `${host}${shortPath}`;
+  } catch {
+    return trimmed.split(/[?#]/)[0].slice(0, 60);
+  }
+}
+
+function compactTitle(title: string | undefined, maxChars = 44): string {
+  const clean = (title ?? '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxChars ? `${clean.slice(0, maxChars - 1).trimEnd()}…` : clean;
+}
+
+function compactFocus(focus: string | undefined): string {
+  const clean = (focus ?? '').replace(/\s+/g, ' ').replace(/"/g, "'").trim();
+  if (!clean) return '';
+  if (/^file:\/\//i.test(clean)) {
+    return compactUrlForPrompt(clean, 44);
+  }
+  if (/^https?:\/\//i.test(clean) && (clean.length > 64 || /[?#]/.test(clean))) {
+    return compactUrlForPrompt(clean, 44);
+  }
+  return clean.length > 100 ? `${clean.slice(0, 99).trimEnd()}…` : clean;
+}
+
 /**
- * Builds a single-line, minimal-token prompt pointing any local AI agent to the exact
- * shared tabId, browser instance, URL, and local AGENT.md guide.
+ * Builds a single-line, ultra-compact prompt (~55-105 chars) pointing any local AI agent
+ * to the shared tabId, access mode (RO/RW), browser[:label], and clean title/host without query-token or path bloat.
  */
 export function buildAgentPrompt(input: SharedTabPromptInput): string {
-  const guide = (input.agentGuide ?? '').trim() || defaultGuidePath();
-  const browserTag = input.instanceId
-    ? `${input.browser || 'browser'} ${input.instanceId}`
-    : (input.browser || 'browser');
-  const modePart = input.mode === 'read' ? ' [read-only]' : input.mode === 'write' ? ' [read-write]' : '';
-  const cleanFocus = (input.focus ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
-  const focusPart = cleanFocus ? ` [focus: "${cleanFocus}"]` : '';
-  return `Browser Bridge tab ${input.tabId}${modePart} (${browserTag}): ${input.url}${focusPart} — read ${guide}`;
+  const browser = (input.browser || 'browser').trim();
+  const cleanLabel = (input.label ?? '')
+    .replace(/[\s[\]]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  const browserTag = cleanLabel && cleanLabel.toLowerCase() !== browser.toLowerCase()
+    ? `${browser}:${cleanLabel}`
+    : browser;
+  const modeCode = input.mode === 'read' ? 'RO' : input.mode === 'write' ? 'RW' : '';
+  const headTokens = [`#${input.tabId}`, modeCode, browserTag].filter(Boolean).join(' ');
+
+  const host = hostOfUrl(input.url).replace(/^www\./i, '');
+  const title = compactTitle(input.title);
+  let targetLabel: string;
+  if (title && title.toLowerCase() !== host.toLowerCase() && title !== input.url) {
+    targetLabel = host && !/^about:/i.test(host) ? `${title} (${host})` : title;
+  } else {
+    targetLabel = compactUrlForPrompt(input.url);
+  }
+
+  const focus = compactFocus(input.focus);
+  const focusPart = focus ? ` [focus: "${focus}"]` : '';
+  return `[Browser Bridge ${headTokens}] ${targetLabel}${focusPart}`;
 }

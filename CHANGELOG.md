@@ -11,6 +11,22 @@ See **[`docs/VERSIONING.md`](docs/VERSIONING.md)** for the formal SemVer & Site-
 
 For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)**.
 
+## [0.11.1] - 2026-11-20
+
+### Upgrade Notes (`0.11.0` → `0.11.1`)
+- **Patch Version Upgrade (`0.11.1` — `SiteLearner` v2 Security & Readiness Hardening, Zero-Downtime Hot-Swap Install, Ultra-Compact Share Prompt & Redacted Activity Ring Log)**: Re-run the prebuilt bootstrapper (`irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex` or `curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash`) or source installer (`.\scripts\install.ps1` / `./scripts/install.sh`), reinstall the Python SDK if used (`pip install ./python`), and click **Reload (`↻`)** once on the **Browser Bridge** extension card (`edge://extensions` / `chrome://extensions`).
+
+### Added & Hardened in `0.11.1`
+1. **`SiteLearner` v2 & `waitForDomQuiet` Safety and Concurrency Hardening**:
+   - **Read-Safe Relocation Guard & Template Preservation**: Restricts automatic heuristic locator relocation strictly to idempotent read-only steps (`is_read_safe_step`), never fuzzy-clicking mutating buttons or `not_actionable` covered elements, and preserves `{{param}}` template placeholders on disk.
+   - **Atomic Cross-Process Playbook Persistence**: Uses atomic temp-file rename (`write_string_atomic`) and timestamp-aware routine merging (`save_playbook_preserving_newer_disk_routines`) so Native Host flushes never overwrite newer MCP/RPC routine repairs or `[STALE]` states.
+   - **Accurate Landmark Readiness & Safe Fallback**: `ARM_SAFE_LOAD_ALL` strips `readinessSelector` so safe fallback waits for genuine `load` + DOM quietness; `elementLandmarkReady` ignores inline `<script>`/`<style>` RSC payloads and empty layout shells, plus isolates `maxChars`-truncated snapshots (`truncated: true`) from false quality violations.
+   - **Forward-Compatible Content Injection & NTFS Zero-Downtime Hot-Swap**: `invokeContent` uses semantic `isOlder(bb.version, expectedVersion)` checks to prevent `[script_error]` loops during upgrades, and `scripts/install.ps1` hot-swaps `BrowserBridge.exe` on Windows NTFS without disconnecting active browser pipes.
+2. **Ultra-Compact Query-Safe Share Prompt**:
+   - New single-line prompt `[Browser Bridge #<tabId> RO|RW <browser>[:<label>]] <Title> (<host>)` (~89% shorter on long SSO/SharePoint URLs) strips `?query` tracking blobs, `#hash` tokens, and `file://` local directory paths while escaping quotes in `[focus: "..."]`.
+3. **Bounded Redacted Session Activity Ring Log (`BrowserBridge activity`)**:
+   - Records up to `500` recent browser operations (including single-shot read-only `snapshot` sessions) in `%LOCALAPPDATA%\BrowserBridge\logs\activity.jsonl` (`~/.browser-bridge/logs/activity.jsonl`), strictly scrubbing URLs to `scheme://host[:port]/pathname` (`file:///<basename>`) with zero query parameters, zero `#hash` fragments, zero credentials, and zero input text.
+
 ## [0.11.0] - 2026-11-18
 
 ### Upgrade Notes (`0.10.1` → `0.11.0`)

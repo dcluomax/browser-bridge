@@ -620,6 +620,9 @@ impl RouteBandit {
         if content_chars == 0 {
             return false;
         }
+        if self.arms.get(arm_id).is_none_or(|a| a.pulls == 0) {
+            return false;
+        }
         let violated = self.is_quality_violation(content_chars);
         let bootstrap_upgrade = !violated && self.reference_chars < 300 && content_chars >= 300;
         let arm = self.arms.entry(arm_id.to_string()).or_default();
@@ -936,6 +939,15 @@ impl SiteAccessProfile {
     }
 
     pub fn is_seed_profile(&self) -> bool {
+        let has_runtime_state = !self.route_controllers.is_empty()
+            || !self.known_blockers.is_empty()
+            || !self.learned_recoveries.is_empty()
+            || self.stats.navigations > 0
+            || self.stats.snapshots > 0
+            || self.stats.in_page_actions > 0;
+        if has_runtime_state {
+            return false;
+        }
         self.is_seed
             || (!self.field_provenance.is_empty()
                 && self
@@ -1100,6 +1112,7 @@ impl SiteAccessProfile {
                 map.insert("preferredWaitUntil".into(), json!("load"));
                 map.insert("hydrationSettleMs".into(), json!(300));
                 map.insert("preferredSnapshotFrames".into(), json!("all"));
+                map.remove("readinessSelector");
             }
             _ => {}
         }
@@ -1692,6 +1705,32 @@ pub fn load_exact_playbook(domain: &str) -> Option<SitePlaybook> {
     serde_json::from_str(&raw).ok()
 }
 
+fn write_string_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
+    static ATOMIC_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let Some(dir) = path.parent() else {
+        return std::fs::write(path, content).map_err(|e| format!("Could not write {}: {e}", path.display()));
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file.json");
+    let seq = ATOMIC_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{file_name}.tmp.{}.{seq}", std::process::id()));
+    std::fs::write(&tmp, content).map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
+    if std::fs::rename(&tmp, path).is_ok() {
+        return Ok(());
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::fs::remove_file(path);
+        if std::fs::rename(&tmp, path).is_ok() {
+            return Ok(());
+        }
+    }
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(path, content).map_err(|e| format!("Could not write {}: {e}", path.display()))
+}
+
 pub fn save_playbook(playbook: &SitePlaybook) -> Result<PathBuf, String> {
     let Some(clean_domain) = extract_domain(&playbook.domain) else {
         return Err("Invalid domain name.".to_string());
@@ -1706,8 +1745,185 @@ pub fn save_playbook(playbook: &SitePlaybook) -> Result<PathBuf, String> {
     normalized.updated_at_epoch_s = now;
     normalized.updated_at = epoch_to_iso8601(now);
     let pretty = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
-    std::fs::write(&path, format!("{pretty}\n")).map_err(|e| format!("Could not write {}: {e}", path.display()))?;
+    write_string_atomic(&path, &format!("{pretty}\n"))?;
     Ok(path)
+}
+
+fn routine_latest_activity_epoch(r: &RoutineDefinition, fallback_epoch: u64) -> u64 {
+    let upd = routine_timestamp_epoch(r, fallback_epoch);
+    let ok_s = r.last_succeeded_at.as_deref().and_then(iso8601_to_epoch).unwrap_or(0);
+    let fail_s = r.last_failed_at.as_deref().and_then(iso8601_to_epoch).unwrap_or(0);
+    upd.max(ok_s).max(fail_s)
+}
+
+/// Persists a `SiteLearner` snapshot without clobbering newer routine definitions, `[STALE]` counts,
+/// or `autoRepaired` locators written to disk by concurrent MCP / RPC routine executions.
+pub fn save_playbook_preserving_newer_disk_routines(playbook: &SitePlaybook) -> Result<PathBuf, String> {
+    let Some(clean_domain) = extract_domain(&playbook.domain) else {
+        return Err("Invalid domain name.".to_string());
+    };
+    let mut merged = playbook.clone();
+    merged.domain = clean_domain.clone();
+    if let Some(disk) = load_exact_playbook(&clean_domain) {
+        let disk_epoch = iso8601_to_epoch(&disk.updated_at).unwrap_or(disk.updated_at_epoch_s);
+        for (k, disk_r) in disk.routines {
+            match merged.routines.get(&k) {
+                None => {
+                    merged.routines.insert(k, disk_r);
+                }
+                Some(mem_r) => {
+                    let disk_act = routine_latest_activity_epoch(&disk_r, disk_epoch);
+                    let mem_act = routine_latest_activity_epoch(mem_r, 0);
+                    if disk_act > mem_act
+                        || (disk_act == mem_act && (disk_r.stale != mem_r.stale || disk_r.consecutive_failures > mem_r.consecutive_failures))
+                    {
+                        merged.routines.insert(k, disk_r);
+                    }
+                }
+            }
+        }
+    }
+    save_playbook(&merged)
+}
+
+pub const MAX_ACTIVITY_LOG_ENTRIES: usize = 500;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityLogEntry {
+    pub ts: String,
+    pub browser: String,
+    pub instance: String,
+    pub session: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<i64>,
+    pub method: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
+    pub ok: bool,
+    pub ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
+
+pub fn activity_log_path() -> PathBuf {
+    if let Some(custom) = std::env::var_os("BROWSER_BRIDGE_ACTIVITY_LOG") {
+        if !custom.is_empty() {
+            return PathBuf::from(custom);
+        }
+    }
+    if let Some(r_dir) = std::env::var_os("BROWSER_BRIDGE_ROUTINES_DIR") {
+        if !r_dir.is_empty() {
+            let p = PathBuf::from(r_dir);
+            let base = p.parent().unwrap_or(p.as_path());
+            return base.join("logs").join("activity.jsonl");
+        }
+    }
+    data_directory().join("logs").join("activity.jsonl")
+}
+
+/// Strictly scrubs a URL to `scheme://host[:port][/truncated_path]` with zero query strings,
+/// zero `#hash` fragments, zero `user:pass@` credentials, and basename-only `file://` paths.
+pub fn redact_url_for_activity_log(raw_url: &str) -> String {
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let before_qh = trimmed.split(['?', '#']).next().unwrap_or("").trim();
+    if before_qh.eq_ignore_ascii_case("about:blank") {
+        return "about:blank".to_string();
+    }
+    if before_qh.len() >= 7 && before_qh[..7].eq_ignore_ascii_case("file://") {
+        let after = &before_qh[7..];
+        let seg = after
+            .rsplit(['/', '\\'])
+            .find(|s| !s.is_empty())
+            .unwrap_or("local-file");
+        let clean_seg: String = seg.chars().take(64).collect();
+        return format!("file:///{clean_seg}");
+    }
+    let Some((scheme_raw, rest)) = before_qh.split_once("://") else {
+        return before_qh.chars().take(80).collect();
+    };
+    let scheme = scheme_raw.to_ascii_lowercase();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return format!("{scheme}:");
+    }
+    let (authority_raw, path_raw) = match rest.split_once('/') {
+        Some((a, p)) => (a, format!("/{p}")),
+        None => (rest, String::new()),
+    };
+    let host_port = authority_raw.rsplit('@').next().unwrap_or(authority_raw).to_ascii_lowercase();
+    if host_port.is_empty() {
+        return String::new();
+    }
+    let clean_path: String = if path_raw.chars().count() > 96 {
+        let mut s: String = path_raw.chars().take(95).collect();
+        s.push('…');
+        s
+    } else {
+        path_raw
+    };
+    format!("{scheme}://{host_port}{clean_path}")
+}
+
+pub fn should_log_activity_method(method: &str) -> bool {
+    !matches!(method, "status" | "tabs.inventory")
+}
+
+pub fn append_activity_log(entry: &ActivityLogEntry) {
+    let path = activity_log_path();
+    let Some(dir) = path.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let Ok(serialized) = serde_json::to_string(entry) else {
+        return;
+    };
+    let existing_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if existing_len < 32_768 {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            use std::io::Write;
+            let _ = writeln!(file, "{serialized}");
+        }
+        return;
+    }
+
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<&str> = existing.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() + 1 <= MAX_ACTIVITY_LOG_ENTRIES {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            use std::io::Write;
+            let _ = writeln!(file, "{serialized}");
+        }
+        return;
+    }
+    let drop_n = (lines.len() + 1).saturating_sub(MAX_ACTIVITY_LOG_ENTRIES);
+    lines.drain(0..drop_n);
+    let mut compacted = String::with_capacity(existing.len() + serialized.len() + 2);
+    for l in lines {
+        compacted.push_str(l);
+        compacted.push('\n');
+    }
+    compacted.push_str(&serialized);
+    compacted.push('\n');
+    let _ = write_string_atomic(&path, &compacted);
+}
+
+pub fn read_activity_log(limit: usize) -> Vec<ActivityLogEntry> {
+    let cap = limit.clamp(1, MAX_ACTIVITY_LOG_ENTRIES);
+    let Ok(raw) = std::fs::read_to_string(activity_log_path()) else {
+        return Vec::new();
+    };
+    let parsed: Vec<ActivityLogEntry> = raw
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<ActivityLogEntry>(l).ok())
+        .collect();
+    let start = parsed.len().saturating_sub(cap);
+    parsed[start..].to_vec()
 }
 
 /// Seeds or upgrades built-in timestamped JSON playbooks inside `%LOCALAPPDATA%\BrowserBridge\routines\`,
@@ -3428,6 +3644,15 @@ impl SiteLearner {
             && call.full_page_read
             && matches!(call.method.as_str(), "page.snapshot" | "page.text" | "page.getText")
         {
+            let is_truncated_read = telemetry
+                .get("truncated")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                || result
+                    .as_deref()
+                    .and_then(|r| r.get("truncated"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
             if let Some(chars) = observed_content_chars.filter(|c| *c > 0) {
                 let mut target_arm: Option<(String, String)> = None;
                 if let Some(active) = resolved_tab
@@ -3438,15 +3663,15 @@ impl SiteLearner {
                         active.content_evaluated = true;
                         target_arm = Some((active.route_key.clone(), active.arm_id.clone()));
                     }
-                } else if let (Some(rk), Some(aid)) = (&call.selected_route_key, &call.selected_arm_id) {
-                    target_arm = Some((rk.clone(), aid.clone()));
                 }
                 if let Some((rk, aid)) = target_arm {
                     if let Some(pb) = self.playbooks.get_mut(&key) {
                         let base_arm = pb.access_profile.base_arm_id(now_s);
                         let bandit = pb.access_profile.ensure_route_bandit_mut(&rk, now_s);
-                        let _ = bandit.observe_content_quality(&aid, chars, &base_arm);
-                        dirty = true;
+                        if !(is_truncated_read && bandit.is_quality_violation(chars)) {
+                            let _ = bandit.observe_content_quality(&aid, chars, &base_arm);
+                            dirty = true;
+                        }
                     }
                 }
             }
@@ -4384,8 +4609,14 @@ fn persist_repaired_routine_step_on_disk(
     let Some(step) = r.steps.get_mut(step_idx) else {
         return;
     };
-    if let Some(obj) = step.params.as_object_mut() {
-        obj.insert("locator".into(), repaired_locator.clone());
+    let had_template_var = step
+        .params
+        .get("locator")
+        .is_some_and(|loc| loc.to_string().contains("{{"));
+    if !had_template_var {
+        if let Some(obj) = step.params.as_object_mut() {
+            obj.insert("locator".into(), repaired_locator.clone());
+        }
     }
     let ts = now_iso8601();
     r.updated_at = Some(ts.clone());
@@ -4564,17 +4795,32 @@ where
         let mut outcome = caller(method.to_string(), p_val.clone()).await;
         let mut step_repaired_locator: Option<Value> = None;
 
-        // Semantic relocation auto-repair on non-optional selector/locator drift
+        // Semantic relocation auto-repair on non-optional read-safe selector drift (or explicit semanticLocator fallback)
         if let Err(ref err) = outcome {
             if !step.optional {
                 let lower_err = err.to_string().to_ascii_lowercase();
+                let read_safe_step = is_read_safe_step(method)
+                    && (method != "page.fetch" || {
+                        let m = p_val
+                            .get("method")
+                            .and_then(Value::as_str)
+                            .unwrap_or("GET")
+                            .to_ascii_uppercase();
+                        m == "GET" || m == "HEAD"
+                    });
+                let explicit_sem = p_val.get("semanticLocator").filter(|v| v.is_object()).cloned();
                 let is_locator_drift = matches!(
                     err.code(),
-                    "page_error" | "timeout" | "not_actionable" | "strict_locator"
+                    "page_error" | "timeout" | "strict_locator"
                 ) || lower_err.contains("no element matches")
                     || lower_err.contains("timed out");
-                if is_locator_drift {
-                    for cand_loc in synthesize_semantic_relocation_locators(method, &p_val) {
+                if is_locator_drift && (read_safe_step || explicit_sem.is_some()) {
+                    let cands = if read_safe_step {
+                        synthesize_semantic_relocation_locators(method, &p_val)
+                    } else {
+                        explicit_sem.into_iter().collect()
+                    };
+                    for cand_loc in cands {
                         let mut alt_params = p_val.clone();
                         if let Some(obj) = alt_params.as_object_mut() {
                             obj.remove("ref");
@@ -5845,6 +6091,28 @@ mod tests {
         let mut np5 = json!({ "tabId": 77, "url": "https://reddit.com/r/golang/" });
         let cn5 = learner.prepare_request("s7", "page.navigate", &mut np5);
         assert_eq!(cn5.selected_arm_id.as_deref(), Some(ARM_BASE));
+
+        // Caller maxChars-truncated snapshots and standalone warm snapshots never poison reference_chars or unpulled arms
+        let mut rn5 = json!({
+            "tabId": 77,
+            "url": "https://reddit.com/r/golang/",
+            "loaded": true,
+            "_telemetry": { "domLoaded": true, "contentChars": 4_000 }
+        });
+        let _ = learner.observe_response(&cn5, true, Some(&mut rn5), None);
+        let mut sp_trunc = json!({ "tabId": 77, "maxChars": 1000 });
+        let cs_trunc = learner.prepare_request("s7", "page.snapshot", &mut sp_trunc);
+        let mut rs_trunc = json!({
+            "tabId": 77,
+            "truncated": true,
+            "text": format!("Tab 77: Reddit\nURL: https://reddit.com/r/golang/\n{}", "x".repeat(900)),
+            "_telemetry": { "contentChars": 900, "truncated": true }
+        });
+        let _ = learner.observe_response(&cs_trunc, true, Some(&mut rs_trunc), None);
+        let pb_after = learner.get_playbook("reddit.com").unwrap();
+        let rb_after = pb_after.access_profile.route_controllers.get("/r/:id").unwrap();
+        assert_eq!(rb_after.arms.get(ARM_BASE).unwrap().quality_violations, 0);
+        assert_eq!(rb_after.reference_chars, 4_000);
     }
 
     #[test]
@@ -6094,5 +6362,156 @@ mod tests {
         )
         .await;
         assert!(strict_res.is_err());
+
+        // 3. Safety invariant: mutating step (e.g. click on "Delete") MUST NOT auto-relocate to heuristic substring text matches!
+        let mutating_routine = RoutineDefinition {
+            name: "dangerous_delete".to_string(),
+            description: "Mutating click".to_string(),
+            read_only: false,
+            steps: vec![RoutineStep {
+                op: "click".to_string(),
+                params: json!({
+                    "locator": {
+                        "steps": [{ "kind": "role", "value": "button", "name": "Delete", "exact": true }]
+                    }
+                }),
+                save_as: None,
+                optional: false,
+            }],
+            ..Default::default()
+        };
+        let mut mut_calls = 0usize;
+        let mut_res = execute_routine_with_caller(
+            &mutating_routine,
+            &Map::new(),
+            Some(5),
+            false,
+            |_method, _params| {
+                mut_calls += 1;
+                async move {
+                    Err(BridgeError::Command {
+                        code: "page_error".into(),
+                        message: "No element matches the locator.".into(),
+                    })
+                }
+            },
+        )
+        .await;
+        assert!(mut_res.is_err());
+        assert_eq!(mut_calls, 1, "mutating step must never fire heuristic substring relocation retries");
+    }
+
+    #[test]
+    fn safe_arm_strips_readiness_selector_and_disk_sync_preserves_external_routine_repairs() {
+        let _iso = ScopedTestRoutinesDir::new("safe-arm-and-sync");
+
+        // 1. ARM_SAFE_LOAD_ALL strips readinessSelector so fallback waits for load + genuine DOM quiet
+        let mut prof = SiteAccessProfile {
+            preferred_wait_until: Some("domcontentloaded".into()),
+            hydration_settle_ms: 150,
+            readiness_quiet_ms: Some(60),
+            readiness_selector: Some("main, article".into()),
+            preferred_snapshot_frames: Some("top".into()),
+            ..Default::default()
+        };
+        prof.stamp_seed_provenance();
+        let safe_wire = prof.runtime_wire_json_with_arm(now_epoch_s(), Some(ARM_SAFE_LOAD_ALL)).unwrap();
+        assert_eq!(safe_wire["preferredWaitUntil"], json!("load"));
+        assert_eq!(safe_wire["hydrationSettleMs"], json!(300));
+        assert_eq!(safe_wire["preferredSnapshotFrames"], json!("all"));
+        assert!(
+            safe_wire.get("readinessSelector").is_none(),
+            "ARM_SAFE_LOAD_ALL must omit readinessSelector so unhydrated shell selectors cannot short-circuit at 0ms"
+        );
+
+        // 2. Cross-process routine preservation: when native_host saves an older in-memory SitePlaybook,
+        //    newer [STALE] / autoRepaired routine updates on disk are preserved!
+        let mut host_mem = SitePlaybook::new("sync.example.test");
+        host_mem.routines.insert(
+            "read_feed".into(),
+            RoutineDefinition {
+                name: "read_feed".into(),
+                read_only: true,
+                updated_at: Some("2026-11-18T10:00:00Z".into()),
+                steps: vec![RoutineStep {
+                    op: "query".into(),
+                    params: json!({ "locator": { "steps": [{ "kind": "css", "value": "#old" }] } }),
+                    save_as: Some("feed".into()),
+                    optional: false,
+                }],
+                ..Default::default()
+            },
+        );
+        save_playbook(&host_mem).unwrap();
+
+        // Simulate external MCP process repairing #old -> #new-repaired with newer timestamp on disk
+        let mut mcp_disk = load_exact_playbook("sync.example.test").unwrap();
+        let r = mcp_disk.routines.get_mut("read_feed").unwrap();
+        r.steps[0].params = json!({ "locator": { "steps": [{ "kind": "css", "value": "#new-repaired" }] } });
+        r.updated_at = Some("2026-11-20T18:00:00Z".into());
+        r.last_succeeded_at = Some("2026-11-20T18:00:00Z".into());
+        save_playbook(&mcp_disk).unwrap();
+
+        // Native host now persists its older host_mem snapshot after a navigation stats update
+        host_mem.access_profile.stats.navigations = 5;
+        save_playbook_preserving_newer_disk_routines(&host_mem).unwrap();
+
+        let final_disk = load_exact_playbook("sync.example.test").unwrap();
+        assert_eq!(final_disk.access_profile.stats.navigations, 5);
+        assert_eq!(
+            final_disk.routines["read_feed"].steps[0].params["locator"]["steps"][0]["value"],
+            json!("#new-repaired"),
+            "host stats flush must not overwrite newer routine repairs on disk"
+        );
+    }
+
+    #[test]
+    fn redacted_activity_ring_log_strips_queries_credentials_and_caps_at_500() {
+        let _iso = ScopedTestRoutinesDir::new("activity-log");
+
+        // 1. SharePoint / OAuth query blobs, #hash tokens, user:pass@, and file:// user dirs are 100% stripped
+        let sp = "https://contoso-my.sharepoint.com/:x:/g/personal/user_contoso_com/cQqDu9?nav=1&xsdata=SECRET_TOKEN_999#frag_secret";
+        let red_sp = redact_url_for_activity_log(sp);
+        assert_eq!(
+            red_sp,
+            "https://contoso-my.sharepoint.com/:x:/g/personal/user_contoso_com/cQqDu9"
+        );
+        assert!(!red_sp.contains("SECRET_TOKEN"));
+        assert!(!red_sp.contains("frag_secret"));
+
+        let cred_url = "https://admin:hunter2@internal.example.com:8443/api/v1/items?api_key=xyz";
+        let red_cred = redact_url_for_activity_log(cred_url);
+        assert_eq!(red_cred, "https://internal.example.com:8443/api/v1/items");
+        assert!(!red_cred.contains("hunter2"));
+        assert!(!red_cred.contains("xyz"));
+
+        let file_url = "file:///C:/Users/secret_user/OneDrive/Confidential/Report.html?token=abc";
+        let red_file = redact_url_for_activity_log(file_url);
+        assert_eq!(red_file, "file:///Report.html");
+        assert!(!red_file.contains("secret_user"));
+
+        assert!(!should_log_activity_method("status"));
+        assert!(!should_log_activity_method("tabs.inventory"));
+        assert!(should_log_activity_method("page.snapshot"));
+
+        // 2. Bounded ring compaction enforces <= 500 entries on disk
+        for idx in 1..=530u64 {
+            append_activity_log(&ActivityLogEntry {
+                ts: "2026-11-20T19:00:00Z".into(),
+                browser: "edge".into(),
+                instance: "inst01".into(),
+                session: "s1".into(),
+                tab_id: Some(1671036640),
+                method: "page.snapshot".into(),
+                target: format!("https://contoso-my.sharepoint.com/doc/{idx}"),
+                ok: true,
+                ms: 74,
+                error_code: None,
+            });
+        }
+        let all = read_activity_log(1000);
+        assert_eq!(all.len(), MAX_ACTIVITY_LOG_ENTRIES);
+        assert_eq!(all.first().unwrap().target, "https://contoso-my.sharepoint.com/doc/31");
+        assert_eq!(all.last().unwrap().target, "https://contoso-my.sharepoint.com/doc/530");
     }
 }

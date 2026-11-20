@@ -236,6 +236,16 @@ test('waitForDomQuiet exits in ~0 ms when readinessSelector already matches and 
   overlay.textContent = 'Browser Bridge WAIT overlay text that must be ignored';
   env.body.appendChild(overlay);
 
+  // Empty <main> containing ONLY an inline RSC/SSR <script> and min-h-screen box must NOT falsely satisfy selectorReady!
+  const shellMain = env.doc.createElement('main');
+  shellMain._rect = { width: 1280, height: 800, top: 0, left: 0, right: 1280, bottom: 800 };
+  const rscScript = env.doc.createElement('script');
+  rscScript.textContent = 'self.__next_f.push([1,"chunk"])';
+  shellMain.appendChild(rscScript);
+  env.body.appendChild(shellMain);
+  assert.equal(contentMod.selectorReady('main'), false, 'script-only empty shell <main> must not count as ready');
+  shellMain.remove();
+
   const main = env.doc.createElement('main');
   main.textContent = 'Rust 2026 release notes and subreddit discussion thread content.';
   env.body.appendChild(main);

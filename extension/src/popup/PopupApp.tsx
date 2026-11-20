@@ -17,7 +17,7 @@ import {
 import { buildAgentPrompt, defaultGuidePath, hostOfUrl, isShareableUrl } from './prompt.ts';
 
 declare const __EXT_VERSION__: string;
-const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.11.0';
+const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.11.1';
 
 export interface PopupState {
   status: string;
@@ -185,6 +185,7 @@ export function PopupApp() {
       mode: effective,
       browser: s?.browser || browserFromPipe || 'edge',
       instanceId: s?.instanceId || instanceFromPipe || '',
+      label: s?.settings.label || undefined,
       agentGuide: s?.agentGuide || '',
     });
   };

@@ -32,7 +32,7 @@ BrowserBridge routines example.com --reset-profile
 
 A **Routine** collapses a 5–10 step UI interaction into a single deterministic tool call (`browser_routine_run` in MCP or `page.run_routine(...)` in Python).
 
-### Built-In 24-Site Timestamped Playbooks (`v0.11.0` · `PATCH x.y.Z` Policy)
+### Built-In 24-Site Timestamped Playbooks (`v0.11.1` · `PATCH x.y.Z` Policy)
 
 Browser Bridge ships **24 standalone, git-tracked JSON playbooks** in [`routines/*.json`](https://github.com/dcluomax/browser-bridge/tree/main/routines), governed by [[Versioning and Site JSON Policy]] (adding or updating `routines/*.json` increments the **3rd SemVer digit `PATCH 0.10.Z`** with refreshed ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps):
 

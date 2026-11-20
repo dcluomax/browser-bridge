@@ -69,7 +69,7 @@ async function executeWithRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-const EXPECTED_CONTENT_VERSION = '0.11.0';
+const EXPECTED_CONTENT_VERSION = '0.11.1';
 
 /** Runs inside the page (isolated world). Must be self-contained: it is serialized by the browser. */
 function invokeContent(
@@ -79,7 +79,19 @@ function invokeContent(
 ): { ok?: unknown; err?: string; missing?: boolean } | Promise<{ ok?: unknown; err?: string; missing?: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bb = (globalThis as any).__bb;
-  if (!bb || (bb.version !== undefined && bb.version !== expectedVersion) || typeof bb[method] !== 'function') {
+  const isOlder = (actual: string, expected: string): boolean => {
+    const a = actual.split('.').map((n) => parseInt(n, 10) || 0);
+    const b = expected.split('.').map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+    }
+    return false;
+  };
+  if (
+    !bb ||
+    (typeof bb.version === 'string' && isOlder(bb.version, expectedVersion)) ||
+    typeof bb[method] !== 'function'
+  ) {
     return { missing: true };
   }
   try {

@@ -7,7 +7,7 @@
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
 
-const CONTENT_VERSION = '0.11.0';
+const CONTENT_VERSION = '0.11.1';
 
 interface SnapshotOptions {
   maxChars?: number;
@@ -2054,14 +2054,18 @@ function isIntrinsicNonTextLandmark(el: Element): boolean {
   return ce === '' || ce === 'true' || ce === 'plaintext-only';
 }
 
+const VISUAL_LANDMARK_TAGS = new Set(['img', 'svg', 'video', 'iframe', 'embed', 'object', 'canvas']);
+
 function elementLandmarkReady(el: Element, allowLayoutRead = true): boolean {
   if (isBridgeOverlayElement(el)) return false;
-  if ((el.textContent ?? '').trim().length > 0) return true;
   if (fastTextChars(el) > 0) return true;
   if (isIntrinsicNonTextLandmark(el)) return true;
   if (allowLayoutRead && typeof el.getBoundingClientRect === 'function') {
-    const rect = el.getBoundingClientRect();
-    if (rect && rect.width > 0 && (rect.height === undefined || rect.height > 0)) return true;
+    const tag = (el.localName ?? el.tagName ?? '').toLowerCase();
+    if (VISUAL_LANDMARK_TAGS.has(tag) || tag.includes('-')) {
+      const rect = el.getBoundingClientRect();
+      if (rect && rect.width > 0 && (rect.height === undefined || rect.height > 0)) return true;
+    }
   }
   return false;
 }

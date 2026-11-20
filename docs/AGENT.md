@@ -1,11 +1,13 @@
 # Browser Bridge — Shared Tab Agent Guide
 
-The user shared a live, logged-in browser tab with you (`tab <TAB_ID>` in `<BROWSER> <INSTANCE>`).
+The user shared a live, logged-in browser tab with you using a compact prompt such as:
+`[Browser Bridge #<TAB_ID> RO|RW <BROWSER>[:<LABEL>]] <Title> (<host>) [focus: "..."]`
+(or `tab <TAB_ID>` in `<BROWSER> <INSTANCE>`).
 
-## Safety & Access Modes (`[read-only]` vs `[read-write]`)
-1. Act **only** on the shared `tabId`.
-2. **If the prompt or tab says `[read-only]` (or MCP is in `--read-only` mode)**: ONLY inspect (`browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element`, `browser_screenshot`, `browser_webmcp_list`, or `readOnlyHint=true` WebMCP tools). Do **not** click, type, upload, or navigate.
-3. **If `[read-write]`**: confirm with the user before submitting forms, sending messages, making purchases, or changing account settings. Hand logins, MFA, and CAPTCHAs back to the user.
+## Safety & Access Modes (`RO` / `[read-only]` vs `RW` / `[read-write]`)
+1. Act **only** on the shared `tabId` (`#<TAB_ID>`).
+2. **If the prompt says `RO` or `[read-only]` (or MCP is in `--read-only` mode)**: ONLY inspect (`browser_snapshot`, `browser_get_text`, `browser_locate`, `browser_get_element`, `browser_screenshot`, `browser_webmcp_list`, read-only `browser_routine_run` / `browser_batch`, or `readOnlyHint=true` WebMCP tools). Do **not** click, type, upload, or navigate.
+3. **If `RW` or `[read-write]`**: confirm with the user before submitting forms, sending messages, making purchases, or changing account settings. Hand logins, MFA, and CAPTCHAs back to the user.
 
 ## 1. Use MCP Tools, Site Routines & WebMCP (preferred when `browser-bridge` MCP is available)
 1. Select browser instance: `browser_status({ "browser": "<INSTANCE>" })`
@@ -40,6 +42,7 @@ with BrowserBridge(browser="<INSTANCE>") as bridge:
 
 ## 3. Use CLI or Direct IPC (any language, no Python needed)
 - Status JSON: `"{{HOST_EXE}}" status --json`
+- Recent redacted session activity (`<= 500` entries, zero query tokens): `"{{HOST_EXE}}" activity --limit 25`
 - Save screenshot: `"{{HOST_EXE}}" screenshot shot.png --tab <TAB_ID> --browser <INSTANCE> --full-page`
 - Stdio JSON-line RPC (`"{{HOST_EXE}}" rpc`):
   `{"id":1,"method":"page.snapshot","params":{"tabId":<TAB_ID>,"browser":"<INSTANCE>"}}`

@@ -346,21 +346,36 @@ class ManagedApiTests(unittest.TestCase):
     def test_adaptive_error_learning_optimizes_perf(self):
         self.page.save_routine(domain="127.0.0.1", reset_access_profile=True)
         try:
-            # 1. Stalled window.onload beacon (4.5s) hits 1.2s load timeout on Visit 1, recovers via DOMContentLoaded,
-            #    and teaches SiteLearner preferredWaitUntil="domcontentloaded" so Visit 2 finishes in <0.8s!
-            nav1 = self.page.goto(args.base + "/stalled-load.html", timeout=1_200)
-            self.assertEqual(nav1.status, 200)
-            self.assertEqual(self.page.locator("#ready-title").inner_text(), "Instant DOM Ready")
+            # 1. SiteLearner v2 hysteresis (k >= 3): Visits 1 & 2 record loadTimeouts without single-spike switching;
+            #    Visit 3 crosses k=3 and switches preferredWaitUntil="domcontentloaded", so Visit 4 finishes in <0.85s!
+            for sample_idx in range(1, 4):
+                nav = self.page.goto(args.base + f"/stalled-load.html?visit={sample_idx}", timeout=1_200)
+                self.assertEqual(nav.status, 200)
+                self.assertEqual(self.page.locator("#ready-title").inner_text(), "Instant DOM Ready")
+                prof_i = self.page.access_profile(domain="127.0.0.1")
+                self.assertGreaterEqual(prof_i["stats"]["loadTimeouts"], sample_idx)
+                if sample_idx < 3:
+                    self.assertIsNone(prof_i.get("preferredWaitUntil"), "k < 3 must not switch preferredWaitUntil prematurely")
+                else:
+                    self.assertEqual(prof_i.get("preferredWaitUntil"), "domcontentloaded")
 
-            prof_after_nav1 = self.page.access_profile(domain="127.0.0.1")
-            self.assertEqual(prof_after_nav1.get("preferredWaitUntil"), "domcontentloaded")
-            self.assertGreaterEqual(prof_after_nav1["stats"]["loadTimeouts"], 1)
+            t_visit4 = time.perf_counter()
+            nav4 = self.page.goto(args.base + "/stalled-load.html?visit=4", timeout=5_000)
+            visit4_s = time.perf_counter() - t_visit4
+            self.assertEqual(nav4.status, 200)
+            self.assertLess(visit4_s, 0.85, f"Learned domcontentloaded profile should skip 4.5s stalled beacon, took {visit4_s:.3f}s")
 
-            t_visit2 = time.perf_counter()
-            nav2 = self.page.goto(args.base + "/stalled-load.html", timeout=5_000)
-            visit2_s = time.perf_counter() - t_visit2
-            self.assertEqual(nav2.status, 200)
-            self.assertLess(visit2_s, 0.85, f"Learned domcontentloaded profile should skip 4.5s stalled beacon, took {visit2_s:.3f}s")
+            # Verify redacted activity.jsonl recorded our visits while stripping ?visit=... query parameters!
+            routines_env = os.environ.get("BROWSER_BRIDGE_ROUTINES_DIR", "")
+            if routines_env:
+                act_path = Path(routines_env).parent / "logs" / "activity.jsonl"
+                deadline_log = time.monotonic() + 2.0
+                while time.monotonic() < deadline_log and not act_path.is_file():
+                    time.sleep(0.05)
+                self.assertTrue(act_path.is_file(), f"Expected activity log at {act_path}")
+                raw_log = act_path.read_text(encoding="utf-8")
+                self.assertIn("/stalled-load.html", raw_log)
+                self.assertNotIn("visit=", raw_log, "Query strings must never be written to activity.jsonl")
 
             # 2. Covered button triggers not_actionable -> agent clicks #accept-cookies -> retry #buy-btn succeeds ->
             #    SiteLearner automatically learns blocker <div#cookie-wall> AND the recovery action triad!
@@ -505,6 +520,96 @@ class ManagedApiTests(unittest.TestCase):
                 self.assertIn(released, [tab["tabId"] for tab in observer.call("tabs.inventory")["tabs"]])
             finally:
                 observer.call("tabs.close", {"tabId": released})
+
+    def test_0110_stable_refs_batch_and_auto_routine_synthesis(self):
+        import re as _re
+
+        # 1. Incremental non-destructive refs across locate() + Same-URL Semantic Ref Self-Healing after DOM node replacement!
+        self.page.goto(args.base + "/playwright.html")
+        snap = self.page.snapshot()
+        name_loc = self.page._call("page.locate", {"locator": {"steps": [{"kind": "css", "value": "#name"}]}})
+        name_ref = name_loc["elements"][0]["ref"]
+
+        # Calling locate() on unrelated elements must NOT invalidate or renumber name_ref!
+        _ = self.page._call("page.locate", {"locator": {"steps": [{"kind": "role", "value": "button"}]}})
+        _ = self.page._call("page.locate", {"locator": {"steps": [{"kind": "css", "value": "li"}]}})
+        name_loc_again = self.page._call("page.locate", {"locator": {"steps": [{"kind": "css", "value": "#name"}]}})
+        self.assertEqual(name_loc_again["elements"][0]["ref"], name_ref)
+
+        # Click "Replace input" (destroys old <input id="name"> node and mounts a brand-new <input id="name"> on same URL)
+        self.page.get_by_role("button", name="Replace input").click()
+        # Typing via the OLD raw ref must self-heal seamlessly on the same URL!
+        self.page._call("page.type", {"ref": name_ref, "text": "SelfHealed", "clear": True})
+        self.assertEqual(self.page.locator("#name").input_value(), "SelfHealed")
+
+        # 2. Single-lease multi-step page.batch() execution with variable interpolation and saveAs chaining
+        batch_out = self.page.batch(
+            [
+                {"op": "type", "params": {"locator": {"steps": [{"kind": "css", "value": "#name"}]}, "text": "{{person}}", "clear": True}},
+                {"op": "select", "params": {"locator": {"steps": [{"kind": "testId", "value": "color"}]}, "values": ["blue"]}},
+                {"op": "check", "params": {"locator": {"steps": [{"kind": "label", "value": "Agree", "exact": True}]}, "checked": True}},
+                {"op": "query", "params": {"operation": "inputValue", "locator": {"steps": [{"kind": "css", "value": "#name"}]}}, "saveAs": "typedPerson"},
+            ],
+            variables={"person": "Alan Turing"},
+        )
+        self.assertEqual(batch_out["succeeded"], 4)
+        self.assertEqual(batch_out["failed"], 0)
+        self.assertEqual(batch_out["outputs"]["typedPerson"], "Alan Turing")
+
+        # 3. Live Auto-Routine Trajectory Distillation: explore a 4-step workflow via raw refs (with a failed detour!),
+        #    flush via routines(flush_auto=True), verify auto_* routine has zero raw refs, and replay it cleanly!
+        auto_tab = self.browser.new_page(args.base + "/playwright.html")
+        learned_name = None
+        try:
+            r_name = auto_tab._call("page.locate", {"locator": {"steps": [{"kind": "css", "value": "#name"}]}})["elements"][0]["ref"]
+            r_color = auto_tab._call("page.locate", {"locator": {"steps": [{"kind": "testId", "value": "color"}]}})["elements"][0]["ref"]
+            r_agree = auto_tab._call("page.locate", {"locator": {"steps": [{"kind": "label", "value": "Agree", "exact": True}]}})["elements"][0]["ref"]
+            r_first_btn = auto_tab._call(
+                "page.locate",
+                {"locator": {"steps": [{"kind": "role", "value": "region", "name": "Items"}, {"kind": "css", "value": "li"}, {"kind": "nth", "index": 1}, {"kind": "role", "value": "button"}]}},
+            )["elements"][0]["ref"]
+
+            # Intentional failed detour (covered button) — must be stripped from distilled routine!
+            with self.assertRaises(BridgeError):
+                auto_tab.get_by_role("button", name="Covered", exact=True).click(timeout=800)
+
+            auto_tab._call("page.type", {"ref": r_name, "text": "Barbara Liskov", "clear": True})
+            auto_tab._call("page.select", {"ref": r_color, "values": ["blue"]})
+            auto_tab._call("page.check", {"ref": r_agree, "checked": True})
+            auto_tab._call("page.click", {"ref": r_first_btn})
+
+            pb = auto_tab.routines(domain="127.0.0.1", flush_auto=True)
+            auto_routines = {
+                k: v for k, v in (pb.get("routines") or {}).items()
+                if v.get("source") == "auto_learned" and "playwright_html" in k
+            }
+            self.assertGreaterEqual(len(auto_routines), 1, f"Expected auto-learned routine in {list((pb.get('routines') or {}).keys())}")
+            detour_matches = [
+                (k, v) for k, v in auto_routines.items()
+                if "eliminated 1 failed detour" in v.get("description", "")
+            ]
+            self.assertEqual(len(detour_matches), 1, f"Expected detour-eliminated routine in {auto_routines}")
+            learned_name, learned_def = detour_matches[0]
+            self.assertNotIn("'ref'", repr(learned_def["steps"]), "Raw refs must be promoted to semantic locators")
+
+            # Replay the auto-learned routine on a fresh reload with a custom argument override!
+            auto_tab.goto(args.base + "/playwright.html")
+            param_keys = list((learned_def.get("params") or {}).keys())
+            override = {param_keys[0]: "Edsger Dijkstra"} if param_keys else {}
+            auto_tab.run_routine(learned_name, override, domain="127.0.0.1")
+            self.assertEqual(auto_tab.locator("#name").input_value(), "Edsger Dijkstra")
+            self.assertTrue(auto_tab.get_by_label("Agree", exact=True).is_checked())
+            self.assertEqual(auto_tab.locator("#chosen").inner_text(), "2")
+            _ = snap
+            _ = _re
+        finally:
+            try:
+                for k in list((auto_tab.routines(domain="127.0.0.1").get("routines") or {}).keys()):
+                    if k.startswith("auto_playwright_html"):
+                        auto_tab.save_routine(domain="127.0.0.1", delete_routine=k)
+            except Exception:
+                pass
+            auto_tab.close()
 
     def test_context_closes_only_its_own_tabs(self):
         with BrowserBridge() as other:

@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` / `v0.10.x` → `v0.11.0`)
+# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.0` → `v0.11.1`)
 
-**Browser Bridge `v0.11.0`** introduces **Quality-Constrained `SiteLearner` v2** (route-scoped `>= 85%` content-completeness bandit, ordered wait modes, `k >= 3` hysteresis, clean-streak settle decay, `_noLearn` benchmark isolation, field provenance, and semantic relocation auto-repair), **Event-Driven DOM Readiness (`waitForDomQuiet`)**, **`browser_batch` / `Page.batch(...)`**, **Auto-Routine Trajectory Distillation**, a **streamlined Astryx Popup UI**, and the **`N >= 20` `PATCH` Release Gate (`scripts/check-routine-gate.py`)** alongside **24 built-in timestamped playbooks (`routines/*.json`)**.
+**Browser Bridge `v0.11.1`** hardens **Quality-Constrained `SiteLearner` v2** (read-safe semantic relocation, atomic cross-process playbook sync, route-scoped `>= 85%` content-completeness bandit, ordered wait modes, `k >= 3` hysteresis, clean-streak settle decay, and `_noLearn` benchmark isolation) and **Event-Driven DOM Readiness (`waitForDomQuiet`)**, adds **Bounded URL-Redacted Activity Logging (`BrowserBridge activity`)**, **Zero-Downtime NTFS Hot-Swap Installation**, **Ultra-Compact Query-Safe Share Prompts**, **`browser_batch` / `Page.batch(...)`**, and **Auto-Routine Trajectory Distillation** across **24 built-in timestamped playbooks (`routines/*.json`)**.
 
 ---
 

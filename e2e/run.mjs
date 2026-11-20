@@ -429,6 +429,19 @@ async function main() {
     const back = await client.call('browser_history', { action: 'back' });
     check('browser_history back', !back.isError && back.text.includes('/form.html'), back.text);
 
+    const batchRes = await client.call('browser_batch', {
+      variables: { batchUser: 'Margaret Hamilton' },
+      steps: [
+        { op: 'type', params: { locator: { steps: [{ kind: 'label', value: 'Name' }] }, text: '{{batchUser}}', clear: true } },
+        { op: 'query', params: { operation: 'value', locator: { steps: [{ kind: 'label', value: 'Name' }] } }, saveAs: 'batchVal' },
+      ],
+    });
+    check(
+      'browser_batch executes multi-step sequence in one MCP call',
+      !batchRes.isError && batchRes.text.includes('Margaret Hamilton'),
+      batchRes.text,
+    );
+
     const navigated = await client.call('browser_navigate', { url: `${base}/second.html` });
     check('browser_navigate', !navigated.isError && navigated.text.includes('Second page'), navigated.text);
 

@@ -276,6 +276,7 @@ export async function handleContextMenuClick(
         title: tab.title,
         browser: browser.kind,
         instanceId: getInstanceId(),
+        label: settings().label || undefined,
         agentGuide: native.agentGuide,
         mode: effective,
         focus,

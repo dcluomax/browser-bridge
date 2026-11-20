@@ -1,6 +1,6 @@
 # Browser Bridge Feature Deep Dive
 
-Every subsystem in Browser Bridge `v0.11.0` is engineered around four core design guarantees:
+Every subsystem in Browser Bridge `v0.11.1` is engineered around four core design guarantees:
 
 - **100% Local:** Runs inside your own live, signed-in Edge, Chrome, Brave, or Firefox profile with zero cloud relays and zero WebDriver browser downloads.
 - **Zero-Port Secure:** Opens **0 TCP/WebSocket ports**, authenticates over OS user-isolated Named Pipes / `0600` Unix sockets, and enforces **3-layer Read-Only / Read-Write tab ACLs**, `allowedOrigins` domain fences, and automatic password/JWT redaction.

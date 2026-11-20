@@ -127,11 +127,12 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
             let mut clean_res = msg.get("result").cloned();
             let err_ref = msg.get("error");
 
-            let (tx, client_id, persists) = {
+            let (tx, client_id, persists, activity_entry) = {
                 let mut guard = state.lock().await;
                 let Some(pending) = guard.pending.remove(req_id) else {
                     return;
                 };
+                let duration_ms = pending.prepared.started_at.elapsed().as_millis() as u64;
                 let to_persist = guard.learner.observe_response(
                     &pending.prepared,
                     ok,
@@ -142,23 +143,89 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
                 if let Some(pb) = to_persist {
                     persists.push(pb);
                 }
+
+                let activity_entry = if !pending.prepared.no_learn
+                    && bridge_core::routines::should_log_activity_method(&pending.prepared.method)
+                {
+                    let resolved_tab = clean_res
+                        .as_ref()
+                        .and_then(|r| r.get("tabId"))
+                        .and_then(Value::as_i64)
+                        .or(pending.prepared.tab_id);
+                    let raw_target = if pending.prepared.method == "page.fetch" {
+                        pending.prepared.target_summary.clone()
+                    } else {
+                        clean_res
+                            .as_ref()
+                            .and_then(|r| r.get("url"))
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string)
+                            .or_else(|| {
+                                resolved_tab.and_then(|tid| guard.learner.tab_urls.get(&tid).cloned())
+                            })
+                            .or_else(|| pending.prepared.url_hint.clone())
+                            .unwrap_or_default()
+                    };
+                    let browser_name = guard
+                        .extension_info
+                        .get("browser")
+                        .and_then(Value::as_str)
+                        .unwrap_or("browser")
+                        .to_string();
+                    let instance_id = guard
+                        .extension_info
+                        .get("instanceId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let error_code = if ok {
+                        None
+                    } else {
+                        err_ref
+                            .and_then(|e| e.get("code"))
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    };
+                    Some(bridge_core::routines::ActivityLogEntry {
+                        ts: bridge_core::routines::now_iso8601(),
+                        browser: browser_name,
+                        instance: instance_id,
+                        session: pending.prepared.session_id.clone(),
+                        tab_id: resolved_tab,
+                        method: pending.prepared.method.clone(),
+                        target: bridge_core::routines::redact_url_for_activity_log(&raw_target),
+                        ok,
+                        ms: duration_ms,
+                        error_code,
+                    })
+                } else {
+                    None
+                };
+
                 let Some(session) = guard.sessions.get(&pending.prepared.session_id) else {
-                    if !persists.is_empty() {
+                    if !persists.is_empty() || activity_entry.is_some() {
                         tokio::task::spawn_blocking(move || {
+                            if let Some(entry) = activity_entry {
+                                bridge_core::routines::append_activity_log(&entry);
+                            }
                             for pb in persists {
-                                let _ = bridge_core::routines::save_playbook(&pb);
+                                let _ = bridge_core::routines::save_playbook_preserving_newer_disk_routines(&pb);
                             }
                         });
                     }
                     return;
                 };
-                (session.tx.clone(), pending.client_id, persists)
+                (session.tx.clone(), pending.client_id, persists, activity_entry)
             };
 
-            if !persists.is_empty() {
+            if !persists.is_empty() || activity_entry.is_some() {
                 tokio::task::spawn_blocking(move || {
+                    if let Some(entry) = activity_entry {
+                        bridge_core::routines::append_activity_log(&entry);
+                    }
                     for pb in persists {
-                        let _ = bridge_core::routines::save_playbook(&pb);
+                        let _ = bridge_core::routines::save_playbook_preserving_newer_disk_routines(&pb);
                     }
                 });
             }
@@ -445,7 +512,7 @@ where
                     if !persists.is_empty() {
                         tokio::task::spawn_blocking(move || {
                             for pb in persists {
-                                let _ = bridge_core::routines::save_playbook(&pb);
+                                let _ = bridge_core::routines::save_playbook_preserving_newer_disk_routines(&pb);
                             }
                         });
                     }
@@ -506,7 +573,7 @@ where
         if !persists.is_empty() {
             tokio::task::spawn_blocking(move || {
                 for pb in persists {
-                    let _ = bridge_core::routines::save_playbook(&pb);
+                    let _ = bridge_core::routines::save_playbook_preserving_newer_disk_routines(&pb);
                 }
             });
         }
