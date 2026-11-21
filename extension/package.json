@@ -27,7 +27,7 @@
   "dependencies": {
     "@astryxdesign/core": "0.7.11-canary.ed0adf3",
     "@astryxdesign/theme-neutral": "0.7.11-canary.ed0adf3",
-    "@stylexjs/stylex": "^0.19.0",
+    "@stylexjs/stylex": "^0.19.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
