@@ -121,12 +121,25 @@ pub fn enumerate(user_key: &str) -> Vec<BridgeEndpoint> {
 pub fn unix_socket_dir() -> PathBuf {
     if let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR") {
         let p = PathBuf::from(xdg);
-        if p.is_dir() {
+        if p.as_os_str().len() <= 40 && p.is_dir() {
             return p.join("browser-bridge");
         }
     }
     let uid = unsafe { libc::geteuid() };
-    std::env::temp_dir().join(format!("bb-{uid}"))
+    let sub = format!("bb-{uid}");
+    let tmp = std::env::temp_dir();
+    if tmp.as_os_str().len() <= 32 {
+        tmp.join(sub)
+    } else {
+        // macOS sets $TMPDIR to /var/folders/.../T (~50 bytes), which overflows the 104-byte
+        // sockaddr_un.sun_path limit when combined with browser-bridge.<user>.<browser>.<id>.
+        let slash_tmp = PathBuf::from("/tmp");
+        if slash_tmp.is_dir() {
+            slash_tmp.join(sub)
+        } else {
+            tmp.join(sub)
+        }
+    }
 }
 
 #[cfg(unix)]

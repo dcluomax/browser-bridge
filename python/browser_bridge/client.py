@@ -458,12 +458,16 @@ class _DirectTransport:
     @staticmethod
     def _unix_socket_dir() -> Path:
         xdg = os.environ.get("XDG_RUNTIME_DIR")
-        if xdg:
+        if xdg and len(xdg) <= 40:
             xdg_path = Path(xdg)
             if xdg_path.is_dir():
                 return xdg_path / "browser-bridge"
         uid = os.geteuid() if hasattr(os, "geteuid") else 0
-        return Path(tempfile.gettempdir()) / f"bb-{uid}"
+        tmp = Path(tempfile.gettempdir())
+        if len(str(tmp)) <= 32:
+            return tmp / f"bb-{uid}"
+        slash_tmp = Path("/tmp")
+        return (slash_tmp if slash_tmp.is_dir() else tmp) / f"bb-{uid}"
 
     @classmethod
     def _discover(cls) -> list[tuple[str, str, str]]:
