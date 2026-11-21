@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "domain": "x.com",
-  "verifiedAt": "2026-11-18T19:50:00Z",
-  "updatedAt": "2026-11-18T19:50:00Z",
-  "updatedAtEpochS": 1795031400,
-  "speedupSummary": "SPA timeline/profile open via domcontentloaded + primaryColumn readinessSelector + top-frame fast path; clean timeline stream extraction in ~45 ms without sidebar trends bloat; safe draft_post & draft_reply staging",
+  "verifiedAt": "2026-11-20T20:25:00Z",
+  "updatedAt": "2026-11-20T20:25:00Z",
+  "updatedAtEpochS": 1795206300,
+  "speedupSummary": "SPA timeline/profile open via domcontentloaded + primaryColumn readinessSelector + top-frame fast path; clean timeline stream extraction in ~45 ms without sidebar trends bloat; post video/HLS stream discovery & safe draft staging",
   "accessProfile": {
     "preferredWaitUntil": "domcontentloaded",
     "hydrationSettleMs": 400,
@@ -127,8 +127,8 @@
       "name": "read_timeline_posts",
       "description": "Extracts visible timeline or thread posts from [data-testid='primaryColumn'] in ~45 ms without sidebar clutter.",
       "readOnly": true,
-      "verifiedAt": "2026-11-17T17:35:00Z",
-      "updatedAt": "2026-11-17T17:35:00Z",
+      "verifiedAt": "2026-11-20T20:25:00Z",
+      "updatedAt": "2026-11-20T20:25:00Z",
       "params": {},
       "steps": [
         {
@@ -144,6 +144,36 @@
             }
           },
           "saveAs": "posts",
+          "optional": false
+        }
+      ]
+    },
+    "extract_post_media": {
+      "name": "extract_post_media",
+      "description": "Discovers embedded X post <video> elements, progressive MP4 variants, and video.twimg.com HLS .m3u8 streams alongside the focal post text (pair with browser_download / page.download_media to save MP4 to disk).",
+      "readOnly": true,
+      "verifiedAt": "2026-11-20T20:25:00Z",
+      "updatedAt": "2026-11-20T20:25:00Z",
+      "params": {},
+      "steps": [
+        {
+          "op": "waitFor",
+          "params": {
+            "timeoutSeconds": 6,
+            "state": "visible",
+            "locator": {
+              "steps": [
+                { "kind": "css", "value": "video, [data-testid='videoPlayer'], [data-testid='videoComponent'], article[data-testid='tweet']" },
+                { "kind": "nth", "index": 0 }
+              ]
+            }
+          },
+          "optional": true
+        },
+        {
+          "op": "media",
+          "params": { "includeAudio": true, "scrollIntoView": true },
+          "saveAs": "media",
           "optional": false
         }
       ]

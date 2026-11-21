@@ -337,6 +337,52 @@ class ClientTests(unittest.TestCase):
             self.assertTrue(doc.get("speedupSummary"), rf.name)
             self.assertGreaterEqual(len(doc.get("routines", {})), 2, rf.name)
 
+    def test_multi_browser_selectors_and_collision_safe_tab_routing(self):
+        from browser_bridge.client import _choose_endpoint_candidates
+
+        eps = [
+            ("browser-bridge.u.edge.a1b2c3d4e5f6", "edge", "a1b2c3d4e5f6"),
+            ("browser-bridge.u.chrome.111122223333", "chrome", "111122223333"),
+            ("browser-bridge.u.chrome.999988887777", "chrome", "999988887777"),
+        ]
+        labels = {"browser-bridge.u.edge.a1b2c3d4e5f6": "Work Profile"}
+        self.assertEqual(_choose_endpoint_candidates(eps, "edge:Work-Profile", labels), [eps[0]])
+        self.assertEqual(_choose_endpoint_candidates(eps, "edge:a1b2", labels), [eps[0]])
+        self.assertEqual(_choose_endpoint_candidates(eps, "chrome:9999", labels), [eps[2]])
+        self.assertEqual(len(_choose_endpoint_candidates(eps, "chrome", labels)), 2)
+
+        t = _DirectTransport()
+        t._multi_enabled = True
+        p_edge = _IpcPeer(None, None)
+        p_chrome = _IpcPeer(None, None)
+        t._peers = {
+            eps[0][0]: (eps[0], p_edge, {"label": "Work Profile"}),
+            eps[1][0]: (eps[1], p_chrome, {"label": ""}),
+        }
+        t._select_active(eps[0][0])
+        sig = tuple(sorted([eps[0][0], eps[1][0]]))
+        t._endpoint_cache = (1e12, sig, [eps[0], eps[1]])
+        t._synced_pipe_sig = sig
+        t._tab_owners = {
+            101: [{"pipe_name": eps[0][0], "browser": "edge", "instance_id": eps[0][2], "label": "Work Profile", "url": "https://a.test", "controllable": True}],
+            202: [{"pipe_name": eps[1][0], "browser": "chrome", "instance_id": eps[1][2], "label": "", "url": "https://b.test", "controllable": True}],
+            2: [
+                {"pipe_name": eps[0][0], "browser": "edge", "instance_id": eps[0][2], "label": "Work Profile", "url": "https://a.test", "controllable": True},
+                {"pipe_name": eps[1][0], "browser": "chrome", "instance_id": eps[1][2], "label": "", "url": "https://b.test", "controllable": True},
+            ],
+        }
+        try:
+            t._route_multi_browser_tab("page.snapshot", {"tabId": 202})
+            self.assertIs(t._peer, p_chrome)
+            t._route_multi_browser_tab("page.snapshot", {"tabId": 101})
+            self.assertIs(t._peer, p_edge)
+            with self.assertRaisesRegex(BridgeError, "ambiguous_tab"):
+                t._route_multi_browser_tab("page.click", {"tabId": 2})
+        finally:
+            t.close()
+
+        self.assertIn("page.media", BrowserBridge._READ_SAFE_METHODS)
+
 
 if __name__ == "__main__":
     unittest.main()

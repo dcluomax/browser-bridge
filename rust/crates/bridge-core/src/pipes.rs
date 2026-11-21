@@ -61,23 +61,48 @@ pub fn parse(pipe_name: &str, user_key: &str) -> Option<BridgeEndpoint> {
     })
 }
 
+pub fn generate_instance_id() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(1);
+    let mut h = RandomState::new().build_hasher();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    h.write_u64(nanos);
+    h.write_u32(std::process::id());
+    h.write_u64(SEQ.fetch_add(1, Ordering::Relaxed));
+    let mut z = h.finish().wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    format!("{:012x}", z & 0xffff_ffff_ffff)
+}
+
 pub fn current_user_key() -> String {
-    #[cfg(windows)]
-    {
-        if let Some(sid) = windows_current_sid() {
-            return sid;
-        }
-        if let Ok(user) = std::env::var("USERNAME") {
-            return sanitize(&user);
-        }
-    }
-    #[cfg(unix)]
-    {
-        if let Ok(user) = std::env::var("USER") {
-            return sanitize(&user);
-        }
-    }
-    "user".to_string()
+    static CACHED_USER_KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED_USER_KEY
+        .get_or_init(|| {
+            #[cfg(windows)]
+            {
+                if let Some(sid) = windows_current_sid() {
+                    return sid;
+                }
+                if let Ok(user) = std::env::var("USERNAME") {
+                    return sanitize(&user);
+                }
+            }
+            #[cfg(unix)]
+            {
+                if let Ok(user) = std::env::var("USER") {
+                    return sanitize(&user);
+                }
+            }
+            "user".to_string()
+        })
+        .clone()
 }
 
 pub fn enumerate(user_key: &str) -> Vec<BridgeEndpoint> {

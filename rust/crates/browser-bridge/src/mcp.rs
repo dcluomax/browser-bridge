@@ -211,6 +211,7 @@ const READ_SAFE_MCP_TOOLS: &[&str] = &[
     "browser_get_text",
     "browser_locate",
     "browser_get_element",
+    "browser_media",
     "browser_wait_for",
     "browser_screenshot",
     "browser_network",
@@ -530,6 +531,36 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "browser_media",
+            "description": "Discovers <video> and <audio> elements, dimensions/duration, DRM status, and ranked downloadable stream/file URLs (progressive MP4/WebM, HLS .m3u8 master & variant playlists, audio tracks, and blob: sources) from the DOM, player component state, metadata, PerformanceResourceTiming, and network capture.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tabId": { "type": "integer" },
+                    "includeAudio": { "type": "boolean", "default": true },
+                    "scrollIntoView": { "type": "boolean", "default": true, "description": "Scrolls the first <video> into view if off-screen to trigger lazy player manifest loading." },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "name": "browser_download",
+            "description": "Downloads a video, audio, or binary resource through the browser tab's authenticated session & Origin/Referer headers directly to disk without base64 context bloat. Automatically resolves and assembles HLS .m3u8 (Master + fMP4 EXT-X-MAP / .m4s / .ts segments) and progressive MP4/WebM streams; when url is omitted, auto-discovers and downloads the highest-ranked non-DRM media on the tab.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "Optional explicit media/file/m3u8 URL. Omit to auto-discover the best video/audio stream on tabId." },
+                    "path": { "type": "string", "description": "Optional local output file or directory path (defaults to the user's Downloads folder)." },
+                    "preferQuality": { "type": "string", "enum": ["best", "lowest"], "default": "best" },
+                    "maxBytes": { "type": "integer", "description": "Maximum download byte budget (default 209715200 = 200 MiB, max 536870912 = 512 MiB)." },
+                    "tabId": { "type": "integer" },
+                    "frameId": { "type": "integer" },
+                    "browser": { "type": "string" }
+                }
+            }
+        }),
+        json!({
             "name": "browser_screenshot",
             "description": "Captures the viewport, the full scrollable page (fullPage=true), or one element (ref/locator). Operates in the background when supported. Pass path to save high-resolution PNG/JPEG bytes directly to disk without consuming model image context.",
             "inputSchema": {
@@ -809,6 +840,21 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
         }));
     }
 
+    for tool in &mut tools {
+        if let Some(props) = tool
+            .get_mut("inputSchema")
+            .and_then(|s| s.get_mut("properties"))
+            .and_then(Value::as_object_mut)
+        {
+            props.entry("browser").or_insert_with(|| {
+                json!({
+                    "type": "string",
+                    "description": "Optional browser selector (edge, chrome, firefox, browser:label, or instanceId). Auto-resolved from tabId when omitted."
+                })
+            });
+        }
+    }
+
     if opts.read_only {
         tools.retain(|t| {
             t.get("name")
@@ -1079,6 +1125,39 @@ fn extract_snapshot_url(snapshot_text: &str) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn format_tab_entry(tab: &Value) -> String {
+    let cur = if tab.get("current").and_then(Value::as_bool) == Some(true) {
+        " (current)"
+    } else {
+        ""
+    };
+    let mode = tab.get("mode").and_then(Value::as_str).unwrap_or("write");
+    let name_tag = tab
+        .get("name")
+        .and_then(Value::as_str)
+        .map(|n| format!(" #{n}"))
+        .unwrap_or_default();
+    let grp_tag = tab
+        .get("group")
+        .and_then(Value::as_str)
+        .map(|g| format!("; group={g}"))
+        .unwrap_or_default();
+    let wait_tag = if tab.get("waitingHandoff").and_then(Value::as_bool) == Some(true) {
+        "; WAIT"
+    } else if tab.get("running").and_then(Value::as_bool) == Some(true) {
+        "; RUN"
+    } else {
+        ""
+    };
+    format!(
+        "- [{}]{name_tag}{cur} {} — {} [{}; mode={mode}{grp_tag}{wait_tag}]",
+        val_str(tab.get("tabId")),
+        val_str(tab.get("title")),
+        val_str(tab.get("url")),
+        val_str(tab.get("access"))
+    )
+}
+
 async fn tracked_send(
     client: &BridgeClient,
     tracker: &Mutex<SessionTracker>,
@@ -1094,16 +1173,32 @@ async fn tracked_send(
     let elapsed_ms = started.elapsed().as_millis() as u64;
     let mut guard = tracker.lock().await;
     match &outcome {
-        Ok((res, _)) => {
+        Ok((res, conn)) => {
             let snap_url = res
                 .get("text")
                 .and_then(Value::as_str)
                 .and_then(extract_snapshot_url);
             let effective_hint = url_hint.as_deref().or(snap_url);
-            guard.record_call(tab_id, effective_hint, method, &params, elapsed_ms, Ok(res));
+            guard.record_call(
+                &conn.endpoint.pipe_name,
+                tab_id,
+                effective_hint,
+                method,
+                &params,
+                elapsed_ms,
+                Ok(res),
+            );
         }
         Err(err) => {
-            guard.record_call(tab_id, url_hint.as_deref(), method, &params, elapsed_ms, Err(err));
+            guard.record_call(
+                browser.unwrap_or(""),
+                tab_id,
+                url_hint.as_deref(),
+                method,
+                &params,
+                elapsed_ms,
+                Err(err),
+            );
         }
     }
     outcome
@@ -1114,19 +1209,21 @@ async fn resolve_target_domain(
     browser: Option<&str>,
     client: &BridgeClient,
     tracker: &Mutex<SessionTracker>,
-) -> Result<(Option<i64>, String), String> {
+) -> Result<(Option<i64>, String, String), String> {
     if let Some(d) = args
         .get("domain")
         .and_then(Value::as_str)
         .and_then(routines::extract_domain)
     {
-        return Ok((args.get("tabId").and_then(Value::as_i64), d));
+        return Ok((args.get("tabId").and_then(Value::as_i64), String::new(), d));
     }
     let tab_id = args.get("tabId").and_then(Value::as_i64);
-    if let Some(tid) = tab_id {
-        if let Some(cached) = tracker.lock().await.tab_urls.get(&tid).cloned() {
-            if let Some(d) = routines::extract_domain(&cached) {
-                return Ok((Some(tid), d));
+    if let (Some(tid), None) = (tab_id, browser) {
+        if client.discover().len() <= 1 {
+            if let Some(cached) = tracker.lock().await.unique_url_for_tab(None, tid) {
+                if let Some(d) = routines::extract_domain(&cached) {
+                    return Ok((Some(tid), String::new(), d));
+                }
             }
         }
     }
@@ -1134,18 +1231,19 @@ async fn resolve_target_domain(
     if let Some(tid) = tab_id {
         p.insert("tabId".into(), json!(tid));
     }
-    let (info, _) = client
+    let (info, conn) = client
         .send("page.info", Value::Object(p), browser, DEFAULT_TIMEOUT)
         .await
         .map_err(|e| e.to_string())?;
     let resolved_tid = info.get("tabId").and_then(Value::as_i64).or(tab_id);
     let url = info.get("url").and_then(Value::as_str).unwrap_or("");
+    let scope = conn.endpoint.pipe_name.clone();
     if !url.is_empty() {
-        tracker.lock().await.observe_url(resolved_tid, Some(url));
+        tracker.lock().await.observe_scoped_url(&scope, resolved_tid, Some(url));
     }
     let domain = routines::extract_domain(url)
         .ok_or_else(|| format!("Tab URL '{url}' does not have a valid domain; pass 'domain' explicitly."))?;
-    Ok((resolved_tid, domain))
+    Ok((resolved_tid, scope, domain))
 }
 
 async fn call_tool(
@@ -1199,6 +1297,61 @@ async fn call_tool(
             }
             match action.as_str() {
                 "list" => {
+                    if browser.is_none() {
+                        let all = client.connect_all().await;
+                        if all.len() >= 2 {
+                            let mut set = tokio::task::JoinSet::new();
+                            for (ep, conn_opt, _) in all {
+                                if let Some(conn) = conn_opt {
+                                    set.spawn(async move {
+                                        let list_res = conn.send("tabs.list", json!({}), DEFAULT_TIMEOUT).await;
+                                        (ep, conn, list_res)
+                                    });
+                                }
+                            }
+                            let mut by_pipe: std::collections::BTreeMap<String, (Arc<BridgeConnection>, Vec<Value>)> =
+                                std::collections::BTreeMap::new();
+                            while let Some(Ok((ep, conn, Ok(res)))) = set.join_next().await {
+                                let tabs = res.get("tabs").and_then(Value::as_array).cloned().unwrap_or_default();
+                                by_pipe.insert(ep.pipe_name, (conn, tabs));
+                            }
+                            let mut lines = Vec::new();
+                            let mut any_tabs = false;
+                            let mut guard = tracker.lock().await;
+                            for (pipe, (conn, tabs)) in &by_pipe {
+                                let tag = if conn.label().is_empty() {
+                                    format!("{}:{}", conn.endpoint.browser, &conn.endpoint.instance_id[..4])
+                                } else {
+                                    format!(
+                                        "{}:{} ({})",
+                                        conn.endpoint.browser,
+                                        bridge_core::client::normalize_label_slug(conn.label()),
+                                        &conn.endpoint.instance_id[..4]
+                                    )
+                                };
+                                if tabs.is_empty() {
+                                    lines.push(format!("Tabs available in {tag}: none"));
+                                    continue;
+                                }
+                                any_tabs = true;
+                                lines.push(format!("Tabs available in {tag}:"));
+                                for tab in tabs {
+                                    let tid = tab.get("tabId").and_then(Value::as_i64);
+                                    let u = tab.get("url").and_then(Value::as_str);
+                                    guard.observe_scoped_url(pipe, tid, u);
+                                    lines.push(format_tab_entry(tab));
+                                }
+                            }
+                            drop(guard);
+                            if !any_tabs && lines.is_empty() {
+                                return text_ok(
+                                    "No tabs are available to this agent in any connected browser. Open one with action=new, or ask the user to share a tab from the Browser Bridge toolbar button.",
+                                );
+                            }
+                            return text_ok(lines.join("\n"));
+                        }
+                    }
+
                     let (res, conn) = match client.send("tabs.list", json!({}), browser, DEFAULT_TIMEOUT).await {
                         Ok(v) => v,
                         Err(err) => return fail(err),
@@ -1216,36 +1369,11 @@ async fn call_tool(
                         for tab in &tabs {
                             let tid = tab.get("tabId").and_then(Value::as_i64);
                             let u = tab.get("url").and_then(Value::as_str);
-                            guard.observe_url(tid, u);
+                            guard.observe_scoped_url(&conn.endpoint.pipe_name, tid, u);
                         }
                     }
                     for tab in tabs {
-                        let cur = if tab.get("current").and_then(Value::as_bool) == Some(true) { " (current)" } else { "" };
-                        let mode = tab.get("mode").and_then(Value::as_str).unwrap_or("write");
-                        let name_tag = tab
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .map(|n| format!(" #{n}"))
-                            .unwrap_or_default();
-                        let grp_tag = tab
-                            .get("group")
-                            .and_then(Value::as_str)
-                            .map(|g| format!("; group={g}"))
-                            .unwrap_or_default();
-                        let wait_tag = if tab.get("waitingHandoff").and_then(Value::as_bool) == Some(true) {
-                            "; WAIT"
-                        } else if tab.get("running").and_then(Value::as_bool) == Some(true) {
-                            "; RUN"
-                        } else {
-                            ""
-                        };
-                        lines.push(format!(
-                            "- [{}]{name_tag}{cur} {} — {} [{}; mode={mode}{grp_tag}{wait_tag}]",
-                            val_str(tab.get("tabId")),
-                            val_str(tab.get("title")),
-                            val_str(tab.get("url")),
-                            val_str(tab.get("access"))
-                        ));
+                        lines.push(format_tab_entry(&tab));
                     }
                     text_ok(lines.join("\n"))
                 }
@@ -1353,7 +1481,7 @@ async fn call_tool(
             let mut p = Map::new();
             p.insert("action".into(), json!(action));
             add_tab(&mut p, args);
-            match tracked_send(client, tracker, "page.history", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.history", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format!("Tab {}: {} — {}", val_str(res.get("tabId")), val_str(res.get("title")), val_str(res.get("url")))),
                 Err(err) => fail(err),
             }
@@ -1371,7 +1499,7 @@ async fn call_tool(
             if let Some(r) = args.get("root").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
                 p.insert("root".into(), json!(r));
             }
-            match tracked_send(client, tracker, "page.snapshot", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.snapshot", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => {
                     let mut out = val_str(res.get("text"));
                     if let Some(u) = extract_snapshot_url(&out) {
@@ -1393,7 +1521,7 @@ async fn call_tool(
             if let Some(m) = args.get("maxChars").and_then(Value::as_i64) {
                 p.insert("maxChars".into(), json!(m));
             }
-            match client.send("page.text", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.text", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => {
                     let trunc = if res.get("truncated").and_then(Value::as_bool) == Some(true) {
                         "\n[truncated; raise maxChars to read more]"
@@ -1419,7 +1547,7 @@ async fn call_tool(
             p.insert("locator".into(), locator.clone());
             p.insert("maxResults".into(), json!(args.get("maxResults").and_then(Value::as_i64).unwrap_or(20)));
             add_tab(&mut p, args);
-            match tracked_send(client, tracker, "page.locate", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.locate", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(res.to_string()),
                 Err(err) => fail(err),
             }
@@ -1438,7 +1566,7 @@ async fn call_tool(
             if let Some(m) = args.get("maxChars").and_then(Value::as_i64) {
                 p.insert("maxChars".into(), json!(m));
             }
-            match tracked_send(client, tracker, "page.query", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.query", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(res.to_string()),
                 Err(err) => fail(err),
             }
@@ -1455,7 +1583,7 @@ async fn call_tool(
                 p.insert("modifiers".into(), Value::Array(mods.clone()));
             }
             let target_label = args.get("ref").and_then(Value::as_str).unwrap_or("locator");
-            match tracked_send(client, tracker, "page.click", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.click", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(&format!("Clicked {target_label}"), &res)),
                 Err(err) => fail(err),
             }
@@ -1467,7 +1595,7 @@ async fn call_tool(
             }
             add_tab(&mut p, args);
             let target_label = args.get("ref").and_then(Value::as_str).unwrap_or("locator");
-            match tracked_send(client, tracker, "page.hover", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.hover", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(&format!("Hovered {target_label}"), &res)),
                 Err(err) => fail(err),
             }
@@ -1483,7 +1611,7 @@ async fn call_tool(
                     p.insert(key.into(), val.clone());
                 }
             }
-            match tracked_send(client, tracker, "page.drag", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match tracked_send(client, tracker, "page.drag", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(
                     &format!(
                         "Dragged ({},{}) -> ({},{})",
@@ -1511,7 +1639,7 @@ async fn call_tool(
             }
             add_tab(&mut p, args);
             let target_label = args.get("ref").and_then(Value::as_str).unwrap_or("locator");
-            match client.send("page.type", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.type", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(&format!("Typed into {target_label}"), &res)),
                 Err(err) => fail(err),
             }
@@ -1530,7 +1658,7 @@ async fn call_tool(
             let mut p = Map::new();
             p.insert("fields".into(), Value::Array(fields_out));
             add_tab(&mut p, args);
-            match client.send("page.fill", Value::Object(p), None, Duration::from_secs(90)).await {
+            match client.send("page.fill", Value::Object(p), browser, Duration::from_secs(90)).await {
                 Ok((res, _)) => {
                     let lines: Vec<String> = res
                         .get("fields")
@@ -1553,7 +1681,7 @@ async fn call_tool(
             }
             add_tab(&mut p, args);
             let target_label = args.get("ref").and_then(Value::as_str).unwrap_or("locator");
-            match client.send("page.select", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.select", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => {
                     let sel: Vec<String> = res.get("selected").and_then(Value::as_array).into_iter().flatten().map(|v| val_str(Some(v))).collect();
                     text_ok(format_action(&format!("Selected {} in {target_label}", sel.join(", ")), &res))
@@ -1572,7 +1700,7 @@ async fn call_tool(
             }
             add_tab(&mut p, args);
             let target_label = args.get("ref").and_then(Value::as_str).unwrap_or("locator");
-            match client.send("page.check", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.check", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(
                     &format!("Set {target_label} checked={}; changed={}", val_str(res.get("checked")), val_str(res.get("changed"))),
                     &res,
@@ -1590,7 +1718,7 @@ async fn call_tool(
                 return err;
             }
             add_tab(&mut p, args);
-            match client.send("page.press", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.press", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(format_action(&format!("Pressed {key}"), &res)),
                 Err(err) => fail(err),
             }
@@ -1607,7 +1735,7 @@ async fn call_tool(
             if let Err(err) = add_target(&mut p, args, false) {
                 return err;
             }
-            match client.send("page.scroll", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.scroll", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => {
                     let end = if res.get("atEnd").and_then(Value::as_bool) == Some(true) { " Reached the end." } else { "" };
                     text_ok(format!("Scrolled. Position x={}, y={}.{end}", val_str(res.get("scrollX")), val_str(res.get("scrollY"))))
@@ -1645,7 +1773,7 @@ async fn call_tool(
                 p.insert("timeoutSeconds".into(), json!(t));
             }
             let budget = Duration::from_secs_f64(seconds.unwrap_or(0.0) + timeout_seconds.unwrap_or(10.0) + 15.0);
-            match client.send("page.waitFor", Value::Object(p), None, budget).await {
+            match client.send("page.waitFor", Value::Object(p), browser, budget).await {
                 Ok((res, _)) => {
                     if let Some(found) = res.get("found").and_then(Value::as_str) {
                         text_ok(format!("Text \"{found}\" appeared after {} ms.", val_str(res.get("elapsedMs"))))
@@ -1662,6 +1790,56 @@ async fn call_tool(
                     }
                 }
                 Err(err) => fail(err),
+            }
+        }
+        "browser_media" => {
+            let mut p = Map::new();
+            add_tab(&mut p, args);
+            if let Some(inc) = args.get("includeAudio").and_then(Value::as_bool) {
+                p.insert("includeAudio".into(), json!(inc));
+            }
+            if let Some(scr) = args.get("scrollIntoView").and_then(Value::as_bool) {
+                p.insert("scrollIntoView".into(), json!(scr));
+            }
+            match tracked_send(client, tracker, "page.media", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
+                Ok((res, _)) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_else(|_| res.to_string())),
+                Err(err) => fail(err),
+            }
+        }
+        "browser_download" => {
+            let url = args
+                .get("url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let out_path = args
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let prefer_quality = args
+                .get("preferQuality")
+                .and_then(Value::as_str)
+                .unwrap_or("best");
+            let max_bytes = args
+                .get("maxBytes")
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .unwrap_or(bridge_core::media::DEFAULT_MAX_DOWNLOAD_BYTES);
+            let tab_id = args.get("tabId").and_then(Value::as_i64);
+            let frame_id = args.get("frameId").and_then(Value::as_i64);
+            let dl_opts = bridge_core::media::DownloadOptions {
+                url,
+                output_path: out_path,
+                tab_id,
+                frame_id,
+                browser,
+                prefer_quality,
+                max_bytes,
+            };
+            match bridge_core::media::download_media(client, dl_opts).await {
+                Ok(res) => text_ok(serde_json::to_string_pretty(&res).unwrap_or_else(|_| res.to_string())),
+                Err(msg) => text_err(msg),
             }
         }
         "browser_screenshot" => {
@@ -1703,7 +1881,7 @@ async fn call_tool(
                 p.insert("maxWidth".into(), json!(4096));
             }
             let timeout = if full_page { Duration::from_secs(45) } else { DEFAULT_TIMEOUT };
-            match client.send("page.screenshot", Value::Object(p), None, timeout).await {
+            match client.send("page.screenshot", Value::Object(p), browser, timeout).await {
                 Ok((res, _)) => {
                     let data = val_str(res.get("data"));
                     let mime = res.get("mimeType").and_then(Value::as_str).unwrap_or("image/jpeg");
@@ -1907,7 +2085,7 @@ async fn call_tool(
                 let all = routines::list_all_playbooks();
                 return text_ok(serde_json::to_string_pretty(&all).unwrap_or_else(|_| "[]".into()));
             }
-            let (resolved_tid, domain) = match resolve_target_domain(args, browser, client, tracker).await {
+            let (resolved_tid, resolved_scope, domain) = match resolve_target_domain(args, browser, client, tracker).await {
                 Ok(v) => v,
                 Err(msg) => return text_err(format!("{msg} [bad_request]")),
             };
@@ -1932,7 +2110,9 @@ async fn call_tool(
                     .trace
                     .iter()
                     .filter(|ev| {
-                        (resolved_tid.is_some() && ev.tab_id == resolved_tid)
+                        (resolved_tid.is_some()
+                            && ev.tab_id == resolved_tid
+                            && (resolved_scope.is_empty() || ev.scope == resolved_scope))
                             || (!ev.domain.is_empty() && routines::domain_candidates(&ev.domain).contains(&pb.domain))
                     })
                     .cloned()
@@ -1955,10 +2135,10 @@ async fn call_tool(
             text_ok(serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()))
         }
         "browser_routine_run" => {
-            let Some(routine_name) = args.get("name").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) else {
+            let Some(routine_name) = args.get("name").and_then(Value::as_str).map(str::trim).filter(|s| !s.trim().is_empty()) else {
                 return text_err("name is required. [bad_request]");
             };
-            let (resolved_tid, domain) = match resolve_target_domain(args, browser, client, tracker).await {
+            let (resolved_tid, _, domain) = match resolve_target_domain(args, browser, client, tracker).await {
                 Ok(v) => v,
                 Err(msg) => return text_err(format!("{msg} [bad_request]")),
             };
@@ -1984,7 +2164,7 @@ async fn call_tool(
             }
         }
         "browser_routine_save" => {
-            let (_, domain) = match resolve_target_domain(args, browser, client, tracker).await {
+            let (_, _, domain) = match resolve_target_domain(args, browser, client, tracker).await {
                 Ok(v) => v,
                 Err(msg) => return text_err(format!("{msg} [bad_request]")),
             };
@@ -2169,7 +2349,7 @@ async fn call_tool(
             let mut p = Map::new();
             p.insert("expression".into(), json!(expr));
             add_tab(&mut p, args);
-            match client.send("page.evaluate", Value::Object(p), None, DEFAULT_TIMEOUT).await {
+            match client.send("page.evaluate", Value::Object(p), browser, DEFAULT_TIMEOUT).await {
                 Ok((res, _)) => text_ok(res.get("result").and_then(Value::as_str).unwrap_or("null")),
                 Err(err) => fail(err),
             }

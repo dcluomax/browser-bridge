@@ -73,6 +73,12 @@ export function getInstanceId(): string {
   return instanceId;
 }
 
+export async function adoptInstanceId(nextId: string): Promise<void> {
+  if (!/^[0-9a-f]{12}$/.test(nextId) || nextId === instanceId) return;
+  instanceId = nextId;
+  await api.storage.local.set({ instanceId });
+}
+
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   current = { ...current, ...sanitize(patch) };
   await api.storage.local.set({ settings: current });

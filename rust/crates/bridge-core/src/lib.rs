@@ -1,5 +1,6 @@
 pub mod client;
 pub mod http;
+pub mod media;
 pub mod native_messaging;
 pub mod pipes;
 pub mod routines;

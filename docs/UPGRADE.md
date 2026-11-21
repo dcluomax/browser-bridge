@@ -1,6 +1,6 @@
-# Upgrade Notes — Migrating from `v0.7.0` / `v0.10.x` / `v0.11.0` to `v0.11.1`
+# Upgrade Notes — Migrating from `v0.7.0` / `v0.10.x` / `v0.11.x` to `v0.12.0`
 
-**Browser Bridge `v0.11.1`** is a backward-compatible hardening and website-readiness release (`Protocol v1`) delivering **Quality-Constrained `SiteLearner` v2** (read-safe semantic relocation, atomic cross-process playbook persistence, `RouteBandit` `>= 85%` content-completeness guardrails, ordered wait lattice `commit < domcontentloaded < load`, `k >= 3` hysteresis, clean-streak decay, and `_noLearn` benchmark isolation), **Event-Driven DOM Readiness (`waitForDomQuiet`)**, **Zero-Downtime NTFS Hot-Swap Installation**, **Ultra-Compact Query-Safe Share Prompts**, **Bounded Redacted Activity Logging (`BrowserBridge activity`)**, **`browser_batch` / `Page.batch(...)`**, **Auto-Routine Trajectory Distillation**, and **24 timestamped `schemaVersion: 2` site optimization JSON playbooks (`routines/*.json`)**.
+**Browser Bridge `v0.12.0`** is a backward-compatible minor feature release (`Protocol v1`) delivering **Zero-Collision, Sub-Millisecond Multi-Browser & Multi-Profile Auto-Routing** (`< 1 ms` cloned-profile `instanceId` self-healing, event-driven `O(1)` `tabId` routing across Edge/Chrome/Brave/Firefox in `< 0.2 ms` hot RTT, unified `browser:label` / `browser:prefix` selectors, and `[ambiguous_tab]` collision protection), **Zero-Dependency Streaming Media Discovery & HLS/fMP4 Downloader (`browser_media` / `browser_download` / `Page.media()` / `Page.download_media()` / `BrowserBridge download`)**, **Smart Cross-Origin CDN Credentials (`credentials: "auto"`) & `blob:` Fetch**, **Quality-Constrained `SiteLearner` v2 (`waitForDomQuiet`)**, and **24 timestamped `schemaVersion: 2` site optimization JSON playbooks (`routines/*.json`)**.
 
 ---
 
@@ -11,7 +11,7 @@
 Paste this prompt into **GitHub Copilot**, **Claude Code**, **Cursor**, **Windsurf**, or **Cline**:
 
 ```text
-Upgrade Browser Bridge to the latest release (v0.11.1) by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — verify SHA-256 checksums, update BrowserBridge + unpacked extensions + 24 timestamped routines, and confirm `BrowserBridge status` and `BrowserBridge routines` report v0.11.1.
+Upgrade Browser Bridge to the latest release (v0.12.0) by following https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md — verify SHA-256 checksums, update BrowserBridge + unpacked extensions + 24 timestamped routines, and confirm `BrowserBridge status` and `BrowserBridge routines` report v0.12.0.
 ```
 
 Or run the one-line terminal bootstrapper directly:

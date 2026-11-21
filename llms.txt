@@ -1,11 +1,11 @@
 # Browser Bridge
 
-> **v0.11.1 · 100% Local · Zero-Port Secure · Native-Rust FAST (~1.1 ms Pipe IPC) · Self-Evolving (Quality-Constrained `SiteLearner` v2, `waitForDomQuiet`, `BrowserBridge activity`, `browser_batch`, Auto-Routine Synthesis, 24 Timestamped `routines/*.json` Playbooks & WebMCP)** — MCP server, Native Messaging host, cross-browser extension (Edge, Chrome, Brave, Firefox), and zero-dependency Python SDK for your own signed-in browser tabs.
+> **v0.12.0 · 100% Local · Zero-Port Secure · Native-Rust FAST (<0.2–1.1 ms Pipe IPC & Zero-Collision Multi-Browser Routing) · Self-Evolving (Quality-Constrained `SiteLearner` v2, `waitForDomQuiet`, `browser_media` & HLS/fMP4 `browser_download`, `browser_batch`, Auto-Routine Synthesis, 24 Timestamped `routines/*.json` Playbooks & WebMCP)** — MCP server, Native Messaging host, cross-browser extension (Edge, Chrome, Brave, Firefox), and zero-dependency Python SDK for your own signed-in browser tabs.
 
 ## One-Prompt AI Agent Installation & Upgrade
 
 - [Agent Installation Playbook (docs/INSTALL.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/INSTALL.md): Step-by-step zero-build SHA-256-verified installer instructions for GitHub Copilot, Claude Code, Cursor, Windsurf, Cline, and Codex.
-- [Upgrade Notes v0.10.x / v0.11.0 -> v0.11.1 (docs/UPGRADE.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/UPGRADE.md): Quality-constrained `SiteLearner` v2, read-safe relocation & atomic cross-process persistence, `waitForDomQuiet` readiness predicate, bounded URL-redacted `BrowserBridge activity` log, ultra-compact share prompt, `browser_batch`, Auto-Routine synthesis, and 24 timestamped `routines/*.json` playbooks.
+- [Upgrade Notes v0.10.x / v0.11.x -> v0.12.0 (docs/UPGRADE.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/UPGRADE.md): Zero-collision sub-millisecond multi-browser & cloned-profile auto-routing, native `browser_media` & HLS/fMP4 `browser_download` building blocks, smart cross-origin CDN fetch, quality-constrained `SiteLearner` v2, `waitForDomQuiet`, and 24 timestamped `routines/*.json` playbooks.
 - [Versioning & Site-Optimization Policy (docs/VERSIONING.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/docs/VERSIONING.md): Website optimization JSON updates always increment the 3rd SemVer digit (`PATCH`, `0.10.Z`) with refreshed ISO-8601 UTC `verifiedAt` and `updatedAt` timestamps.
 - [Changelog & Benchmarks (CHANGELOG.md)](https://raw.githubusercontent.com/dcluomax/browser-bridge/main/CHANGELOG.md): Full release history and network-excluded speedup metrics across all 24 built-in websites.
 

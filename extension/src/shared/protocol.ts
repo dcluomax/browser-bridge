@@ -17,12 +17,13 @@ export interface HelloMessage {
   label: string;
 }
 
-/** Host -> extension: acknowledges hello. */
+/** Host -> extension: acknowledges hello (and reports a rotated instanceId if a cloned profile collided). */
 export interface HostHelloMessage {
   type: 'hostHello';
   protocol: number;
   hostVersion: string;
   pipeName: string;
+  instanceId?: string;
   agentGuide?: string;
 }
 

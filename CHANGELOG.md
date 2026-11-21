@@ -11,6 +11,25 @@ See **[`docs/VERSIONING.md`](docs/VERSIONING.md)** for the formal SemVer & Site-
 
 For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)**.
 
+## [0.12.0] - 2026-11-20
+
+### Upgrade Notes (`0.11.x` → `0.12.0`)
+- **Minor Version Upgrade (`0.12.0` — Zero-Collision Sub-Millisecond Multi-Browser & Multi-Profile Auto-Routing, `browser_media` & `browser_download` Streaming HLS/fMP4 Building Blocks, Smart CORS CDN Fetch)**: Re-run the prebuilt bootstrapper (`irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex` or `curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash`) or source installer (`.\scripts\install.ps1` / `./scripts/install.sh`), reinstall the Python SDK if used (`pip install ./python`), and click **Reload (`↻`)** once on the **Browser Bridge** extension card (`edge://extensions` / `chrome://extensions`).
+
+### Added in `0.12.0`
+1. **Zero-Collision, Sub-Millisecond Multi-Browser & Multi-Profile Auto-Routing**:
+   - **Self-Healing Cloned Profile `instanceId`**: `native_host.rs` atomically binds the initial Named Pipe / live-checked Unix socket (`bind_initial_ipc`) before sending `hostHello`; if a manually cloned browser profile directory collides with an active `instanceId`, the host rotates to a fresh 12-hex `instanceId` in `< 1 ms` and persists it back to `storage.local` via `hostHello.instanceId`.
+   - **Event-Driven `O(1)` `tabId` Router (`< 0.2 ms` Hot IPC RTT)**: `BridgeClient` (Rust) and `_DirectTransport` (Python) cache user SIDs (`OnceLock`), cache pipe discovery (`250 ms`), subscribe to push `tabs.changed` events, and query `tabs.inventory` in parallel (`JoinSet`) across connected browsers only when `>= 2` browsers are active and dirty; subsequent calls route `tabId` across Edge, Chrome, Chromium, and Firefox in `O(1)` (`~50 ns`), auto-select the sole browser with shared tabs, and block true cross-browser integer `tabId` collisions with `[ambiguous_tab]` before touching either browser.
+   - **Unified `browser` Selector & Scoped `SessionTracker`**: All MCP tools now accept optional `browser` (`edge`, `chrome`, `firefox`, `browser:label` including hyphenated `edge:Work-Profile`, or `>= 4`-char `instanceId` prefix) with `[ambiguous_browser]` disambiguation, `browser_tabs(action="list")` aggregates tabs across all connected browsers in parallel when `browser` is omitted, and `SessionTracker` keys tab URLs and traces by `(pipe_scope, tabId)`.
+2. **Multi-Layer Media Discovery Building Block (`browser_media` / `page.media` / `Page.media()`)**:
+   - Inspects `<video>` and `<audio>` elements across frames (`src`, `currentSrc`, `poster`, `<source>`, dimensions, duration, EME `drmEncrypted` status), OpenGraph / Twitter Card / JSON-LD `VideoObject` metadata, `PerformanceResourceTiming` (`performance.getEntriesByType('resource')` — retroactive even on tabs opened before sharing), bounded SPA player component state (`video_info.variants` progressive MP4s & bitrates on sites like `x.com`), and captured network exchanges.
+   - Filters out fMP4 initialization headers (`/0/0/*.mp4`) and `.m4s`/`.ts` fragments from standalone candidates while ranking progressive `video/mp4` variants, `hls_master` `.m3u8`, `hls_variant` `.m3u8`, audio tracks, and `blob:` sources deterministically.
+3. **Zero-Dependency Native Media & HLS/fMP4 Downloader (`browser_download` / `Page.download_media()` / `BrowserBridge download`)**:
+   - Downloads progressive `.mp4`/`.webm`/audio/binary files or natively parses and assembles HLS `.m3u8` streams (Master playlist variant selection by resolution/bandwidth + fMP4 `#EXT-X-MAP` initialization header + `.m4s`/`.ts` segments, with optional `ffmpeg -c copy` lossless audio muxing when separate `#EXT-X-MEDIA:TYPE=AUDIO` tracks exist) directly to disk (`Downloads/` by default) with zero Base64 LLM context bloat and strict EME/`#EXT-X-KEY` DRM refusal (`[drm_protected]`).
+   - Added read-only `extract_post_media` routine to `routines/x.com.json` and `op: "media"` support in `browser_batch` & Site Routines.
+4. **Smart Cross-Origin CDN Credentials & `blob:` Support in `page.fetch` (`requests.ts`)**:
+   - `page.fetch` now supports `credentials: "auto" | "include" | "same-origin" | "omit"` (default `"auto"`), `blob:` URLs, and per-iframe `frameId` scoping, automatically falling back from `include` to `omit` on cross-origin media CDNs without `Access-Control-Allow-Credentials` while preserving genuine browser CORS, `Origin`, and `Referer` headers.
+
 ## [0.11.1] - 2026-11-20
 
 ### Upgrade Notes (`0.11.0` → `0.11.1`)

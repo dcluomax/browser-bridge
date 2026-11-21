@@ -168,6 +168,60 @@ function serveFixtures() {
         ">Run Probe</button>`);
       return;
     }
+    if (url.pathname === '/video-post.html') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>Social Video Post</title>
+        <article data-testid="tweet">
+          <div data-testid="videoComponent">
+            <video id="post-vid" poster="/thumb.jpg" muted></video>
+          </div>
+        </article>
+        <script>
+          const v = document.getElementById('post-vid');
+          const b = new Blob(['stub'], { type: 'video/mp4' });
+          v.src = URL.createObjectURL(b);
+          fetch('/streams/master.m3u8?tag=16');
+        </script>`);
+      return;
+    }
+    if (url.pathname === '/streams/master.m3u8') {
+      response.writeHead(200, {
+        'content-type': 'application/vnd.apple.mpegurl',
+        'access-control-allow-origin': `http://${request.headers.host}`,
+      }).end([
+        '#EXTM3U',
+        '#EXT-X-VERSION:6',
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x492',
+        '/streams/pl/320x492/low.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=600000,RESOLUTION=468x720',
+        '/streams/pl/468x720/high.m3u8',
+      ].join('\n'));
+      return;
+    }
+    if (url.pathname === '/streams/pl/468x720/high.m3u8') {
+      response.writeHead(200, { 'content-type': 'application/vnd.apple.mpegurl' }).end([
+        '#EXTM3U',
+        '#EXT-X-VERSION:6',
+        '#EXT-X-MAP:URI="/streams/vid/avc1/0/0/468x720/init.mp4"',
+        '#EXTINF:3.000,',
+        '/streams/vid/avc1/0/3000/468x720/seg1.m4s',
+        '#EXTINF:3.000,',
+        '/streams/vid/avc1/3000/6000/468x720/seg2.m4s',
+        '#EXT-X-ENDLIST',
+      ].join('\n'));
+      return;
+    }
+    if (url.pathname === '/streams/vid/avc1/0/0/468x720/init.mp4') {
+      response.writeHead(200, { 'content-type': 'video/mp4' }).end(Buffer.from('\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2', 'binary'));
+      return;
+    }
+    if (url.pathname === '/streams/vid/avc1/0/3000/468x720/seg1.m4s') {
+      response.writeHead(200, { 'content-type': 'video/iso.segment' }).end(Buffer.from('\x00\x00\x00\x0cmoofSEG_ONE!', 'binary'));
+      return;
+    }
+    if (url.pathname === '/streams/vid/avc1/3000/6000/468x720/seg2.m4s') {
+      response.writeHead(200, { 'content-type': 'video/iso.segment' }).end(Buffer.from('\x00\x00\x00\x0cmoofSEG_TWO!', 'binary'));
+      return;
+    }
     if (url.pathname === '/redirect') {
       response.writeHead(302, { location: '/playwright.html' }).end();
       return;

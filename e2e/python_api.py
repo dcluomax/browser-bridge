@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 import tempfile
 import time
 import unittest
@@ -610,6 +611,37 @@ class ManagedApiTests(unittest.TestCase):
             except Exception:
                 pass
             auto_tab.close()
+
+    def test_0120_media_discovery_and_hls_fmp4_video_download(self):
+        vid_tab = self.browser.new_page(args.base + "/video-post.html")
+        try:
+            deadline = time.monotonic() + 5.0
+            media_rep = vid_tab.media()
+            while time.monotonic() < deadline and not any(c.get("kind") == "hls_master" for c in media_rep.get("candidates", [])):
+                time.sleep(0.1)
+                media_rep = vid_tab.media()
+
+            self.assertGreaterEqual(len(media_rep["elements"]), 1)
+            self.assertEqual(media_rep["elements"][0]["tag"], "video")
+            self.assertFalse(media_rep["drmDetected"])
+            kinds = [c["kind"] for c in media_rep["candidates"]]
+            self.assertIn("hls_master", kinds, media_rep)
+            self.assertLess(kinds.index("hls_master"), kinds.index("blob"))
+
+            with tempfile.TemporaryDirectory() as tmp:
+                dest = Path(tmp) / "post_video.mp4"
+                dl = vid_tab.download_media(dest)
+                self.assertEqual(dl["delivery"], "hls_fmp4")
+                self.assertEqual(dl["width"], 468)
+                self.assertEqual(dl["height"], 720)
+                self.assertEqual(dl["segmentsDownloaded"], 2)
+                self.assertTrue(dl["validMp4Header"])
+                raw = dest.read_bytes()
+                self.assertIn(b"ftypisom", raw)
+                self.assertIn(b"moofSEG_ONE!", raw)
+                self.assertIn(b"moofSEG_TWO!", raw)
+        finally:
+            vid_tab.close()
 
     def test_context_closes_only_its_own_tabs(self):
         with BrowserBridge() as other:

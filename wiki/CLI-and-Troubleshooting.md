@@ -11,6 +11,10 @@ BrowserBridge status --json
 BrowserBridge screenshot out.png --full-page
 BrowserBridge screenshot header.png --tab 42 --selector "header"
 
+# Download non-DRM page media or assemble HLS (.m3u8 / fMP4) streams directly to disk
+BrowserBridge download --tab 42 --output video.mp4
+BrowserBridge download https://cdn.example.com/streams/master.m3u8 --tab 42 --quality best --json
+
 # View or reset learned Site Memory playbooks
 BrowserBridge routines
 BrowserBridge routines app.diagrams.net

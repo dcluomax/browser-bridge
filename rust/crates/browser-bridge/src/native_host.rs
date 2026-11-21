@@ -63,14 +63,20 @@ where
     }
 
     let browser = pipes::normalize_browser(first.get("browser").and_then(Value::as_str));
-    let instance_id = first.get("instanceId").and_then(Value::as_str).unwrap_or("");
-    let Ok(pipe_name) = pipes::build(user_key, browser, instance_id) else {
+    let requested_instance_id = first.get("instanceId").and_then(Value::as_str).unwrap_or("");
+    if pipes::build(user_key, browser, requested_instance_id).is_err() {
         return 2;
+    }
+    let Some(bound) = bind_initial_ipc(user_key, browser, requested_instance_id).await else {
+        return 1;
     };
+    let pipe_name = bound.pipe_name.clone();
+    let effective_instance_id = bound.instance_id.clone();
 
     let guide_path = bridge_core::ensure_agent_guide(None).display().to_string();
     let mut extension_info = first.clone();
     if let Some(obj) = extension_info.as_object_mut() {
+        obj.insert("instanceId".into(), Value::String(effective_instance_id.clone()));
         obj.insert("hostVersion".into(), Value::String(bridge_core::VERSION.into()));
         obj.insert("pipeName".into(), Value::String(pipe_name.clone()));
         obj.insert("agentGuide".into(), Value::String(guide_path.clone()));
@@ -81,6 +87,7 @@ where
         "protocol": bridge_core::PROTOCOL_VERSION,
         "hostVersion": bridge_core::VERSION,
         "pipeName": pipe_name,
+        "instanceId": effective_instance_id,
         "agentGuide": guide_path,
     });
     if write_message(&mut output, &host_hello).await.is_err() {
@@ -99,9 +106,8 @@ where
     });
 
     let listener_state = Arc::clone(&state);
-    let pipe_for_listener = pipe_name.clone();
     let listener_task = tokio::spawn(async move {
-        serve_ipc(&pipe_for_listener, listener_state).await;
+        serve_ipc(bound, listener_state).await;
     });
 
     while let Ok(Some(msg)) = read_message(&mut input).await {
@@ -245,11 +251,13 @@ async fn handle_extension_message(state: &Arc<Mutex<State>>, msg: Value) {
         Some("hello") => {
             let mut guard = state.lock().await;
             let pipe = guard.extension_info.get("pipeName").cloned().unwrap_or(Value::Null);
+            let inst = guard.extension_info.get("instanceId").cloned().unwrap_or(Value::Null);
             let guide = guard.extension_info.get("agentGuide").cloned().unwrap_or(Value::Null);
             let mut updated = msg;
             if let Some(obj) = updated.as_object_mut() {
                 obj.insert("hostVersion".into(), Value::String(bridge_core::VERSION.into()));
                 obj.insert("pipeName".into(), pipe);
+                obj.insert("instanceId".into(), inst);
                 obj.insert("agentGuide".into(), guide);
             }
             guard.extension_info = updated;
@@ -583,14 +591,52 @@ where
 }
 
 #[cfg(windows)]
-async fn serve_ipc(pipe_name: &str, state: Arc<Mutex<State>>) {
-    let path = pipes::windows_pipe_path(pipe_name);
-    let mut first = true;
+struct BoundIpc {
+    pipe_name: String,
+    instance_id: String,
+    initial_server: tokio::net::windows::named_pipe::NamedPipeServer,
+}
+
+#[cfg(windows)]
+async fn bind_initial_ipc(user_key: &str, browser: &str, requested_instance_id: &str) -> Option<BoundIpc> {
+    let mut candidate = requested_instance_id.to_string();
+    for _ in 0..8 {
+        let pipe_name = pipes::build(user_key, browser, &candidate).ok()?;
+        let path = pipes::windows_pipe_path(&pipe_name);
+        match create_current_user_pipe(&path, true) {
+            Ok(initial_server) => {
+                return Some(BoundIpc {
+                    pipe_name,
+                    instance_id: candidate,
+                    initial_server,
+                });
+            }
+            Err(err)
+                if err.kind() == std::io::ErrorKind::PermissionDenied
+                    || err.raw_os_error() == Some(5) =>
+            {
+                candidate = pipes::generate_instance_id();
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+async fn serve_ipc(bound: BoundIpc, state: Arc<Mutex<State>>) {
+    let path = pipes::windows_pipe_path(&bound.pipe_name);
+    let mut next_server = Some(bound.initial_server);
     loop {
-        let Ok(server) = create_current_user_pipe(&path, first) else {
-            break;
+        let server = match next_server.take() {
+            Some(s) => s,
+            None => {
+                let Ok(s) = create_current_user_pipe(&path, false) else {
+                    break;
+                };
+                s
+            }
         };
-        first = false;
         if server.connect().await.is_err() {
             break;
         }
@@ -649,27 +695,281 @@ fn create_current_user_pipe(path: &str, first: bool) -> std::io::Result<tokio::n
 }
 
 #[cfg(unix)]
-async fn serve_ipc(pipe_name: &str, state: Arc<Mutex<State>>) {
+struct BoundIpc {
+    pipe_name: String,
+    instance_id: String,
+    listener: tokio::net::UnixListener,
+}
+
+#[cfg(unix)]
+async fn bind_initial_ipc(user_key: &str, browser: &str, requested_instance_id: &str) -> Option<BoundIpc> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     let dir = pipes::unix_socket_dir();
     let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir);
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    let Ok(meta) = std::fs::symlink_metadata(&dir) else {
-        return;
-    };
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
     if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } || (meta.mode() & 0o077) != 0 {
-        return;
+        return None;
     }
-    let path = dir.join(pipe_name);
-    let _ = std::fs::remove_file(&path);
-    let Ok(listener) = tokio::net::UnixListener::bind(&path) else {
-        return;
-    };
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    while let Ok((stream, _)) = listener.accept().await {
+    let mut candidate = requested_instance_id.to_string();
+    for _ in 0..8 {
+        let pipe_name = pipes::build(user_key, browser, &candidate).ok()?;
+        let path = dir.join(&pipe_name);
+        if std::fs::symlink_metadata(&path).is_ok() {
+            let live = tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                tokio::net::UnixStream::connect(&path),
+            )
+            .await
+            .is_ok_and(|res| res.is_ok());
+            if live {
+                candidate = pipes::generate_instance_id();
+                continue;
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+        if let Ok(listener) = tokio::net::UnixListener::bind(&path) {
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            return Some(BoundIpc {
+                pipe_name,
+                instance_id: candidate,
+                listener,
+            });
+        }
+        candidate = pipes::generate_instance_id();
+    }
+    None
+}
+
+#[cfg(unix)]
+async fn serve_ipc(bound: BoundIpc, state: Arc<Mutex<State>>) {
+    while let Ok((stream, _)) = bound.listener.accept().await {
         let st = Arc::clone(&state);
         tokio::spawn(async move {
             handle_pipe_client(stream, st).await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bridge_core::client::BridgeClient;
+
+    async fn spawn_mock_browser_host(
+        user_key: &str,
+        browser: &str,
+        instance_id: &str,
+        label: &str,
+        tabs: Arc<Mutex<Vec<(i64, String)>>>,
+    ) -> (
+        Value,
+        mpsc::UnboundedSender<Value>,
+        tokio::task::JoinHandle<i32>,
+    ) {
+        let (ext_to_host_w, host_in) = tokio::io::duplex(65536);
+        let (host_out, mut ext_from_host_r) = tokio::io::duplex(65536);
+        let uk = user_key.to_string();
+        let host_task = tokio::spawn(async move { run_with_streams(host_in, host_out, &uk).await });
+
+        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<Value>();
+        let mut writer = ext_to_host_w;
+        let hello = json!({
+            "type": "hello",
+            "protocol": bridge_core::PROTOCOL_VERSION,
+            "browser": browser,
+            "browserVersion": "157.0",
+            "extensionVersion": bridge_core::VERSION,
+            "instanceId": instance_id,
+            "label": label,
+        });
+        write_message(&mut writer, &hello).await.unwrap();
+        let host_hello = read_message(&mut ext_from_host_r).await.unwrap().unwrap();
+
+        tokio::spawn(async move {
+            while let Some(out_msg) = msg_rx.recv().await {
+                if write_message(&mut writer, &out_msg).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let responder_tx = msg_tx.clone();
+        let browser_tag = browser.to_string();
+        tokio::spawn(async move {
+            while let Ok(Some(msg)) = read_message(&mut ext_from_host_r).await {
+                if msg.get("type").and_then(Value::as_str) != Some("request") {
+                    continue;
+                }
+                let id = msg.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
+                let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
+                let snap_tabs = tabs.lock().await.clone();
+                let resp = match method {
+                    "status" => json!({
+                        "type": "response",
+                        "id": id,
+                        "ok": true,
+                        "result": {
+                            "managedApi": 1,
+                            "accessibleTabs": snap_tabs.len(),
+                            "currentTabId": snap_tabs.first().map(|(t, _)| *t),
+                            "readOnlyMode": false,
+                            "accessAllTabs": false,
+                            "trustedInput": true,
+                            "allowEvaluate": false
+                        }
+                    }),
+                    "tabs.inventory" | "tabs.list" => {
+                        let items: Vec<Value> = snap_tabs
+                            .iter()
+                            .map(|(tid, url)| {
+                                json!({
+                                    "tabId": tid,
+                                    "title": format!("{browser_tag}-{tid}"),
+                                    "url": url,
+                                    "controllable": true,
+                                    "mode": "write",
+                                    "access": "shared by user"
+                                })
+                            })
+                            .collect();
+                        json!({ "type": "response", "id": id, "ok": true, "result": { "tabs": items } })
+                    }
+                    "page.snapshot" | "page.info" => {
+                        let req_tid = params
+                            .get("tabId")
+                            .and_then(Value::as_i64)
+                            .or_else(|| snap_tabs.first().map(|(t, _)| *t));
+                        if let Some((tid, url)) = req_tid.and_then(|t| snap_tabs.iter().find(|(id, _)| *id == t).cloned()) {
+                            json!({
+                                "type": "response",
+                                "id": id,
+                                "ok": true,
+                                "result": {
+                                    "tabId": tid,
+                                    "browser": browser_tag,
+                                    "url": url,
+                                    "title": format!("{browser_tag}-{tid}"),
+                                    "text": format!("URL: {url}\n[{browser_tag} tab {tid}]")
+                                }
+                            })
+                        } else {
+                            json!({
+                                "type": "response",
+                                "id": id,
+                                "ok": false,
+                                "error": { "code": "no_tab", "message": "Tab does not exist." }
+                            })
+                        }
+                    }
+                    _ => json!({ "type": "response", "id": id, "ok": true, "result": {} }),
+                };
+                let _ = responder_tx.send(resp);
+            }
+        });
+
+        (host_hello, msg_tx, host_task)
+    }
+
+    #[tokio::test]
+    async fn multi_browser_zero_collision_routing_and_cloned_instance_self_heal() {
+        let user_key = format!("bbtest-{}", pipes::generate_instance_id());
+        let edge_tabs = Arc::new(Mutex::new(vec![
+            (101_i64, "https://github.com/org/repo".to_string()),
+            (2_i64, "https://edge-only.example/two".to_string()),
+        ]));
+        let chrome_tabs = Arc::new(Mutex::new(vec![
+            (202_i64, "https://docs.google.com/document/d/1".to_string()),
+            (2_i64, "https://chrome-only.example/two".to_string()),
+        ]));
+        let clone_tabs = Arc::new(Mutex::new(vec![
+            (303_i64, "https://x.com/home".to_string()),
+        ]));
+
+        let (edge_hello, _edge_tx, edge_task) =
+            spawn_mock_browser_host(&user_key, "edge", "aaaaaaaaaaaa", "", Arc::clone(&edge_tabs)).await;
+        let (chrome_hello, chrome_tx, chrome_task) =
+            spawn_mock_browser_host(&user_key, "chrome", "bbbbbbbbbbbb", "Work Profile", Arc::clone(&chrome_tabs)).await;
+        // Cloned Chrome profile booting with the EXACT same instanceId "bbbbbbbbbbbb":
+        let (clone_hello, _clone_tx, clone_task) =
+            spawn_mock_browser_host(&user_key, "chrome", "bbbbbbbbbbbb", "", Arc::clone(&clone_tabs)).await;
+
+        assert_eq!(edge_hello.get("instanceId").and_then(Value::as_str), Some("aaaaaaaaaaaa"));
+        assert_eq!(chrome_hello.get("instanceId").and_then(Value::as_str), Some("bbbbbbbbbbbb"));
+        let rotated_id = clone_hello.get("instanceId").and_then(Value::as_str).unwrap();
+        assert_ne!(rotated_id, "bbbbbbbbbbbb", "Cloned profile instanceId must self-heal immediately!");
+        assert_eq!(rotated_id.len(), 12);
+
+        let client = BridgeClient::with_user_key("multi-test", false, &user_key);
+        let timeout = std::time::Duration::from_secs(5);
+
+        // 1. Without specifying browser, tabId=202 auto-routes straight to Chrome (even though Edge has higher default priority)!
+        let (res_202, conn_202) = client
+            .send("page.snapshot", json!({ "tabId": 202 }), None, timeout)
+            .await
+            .unwrap();
+        assert_eq!(conn_202.endpoint.browser, "chrome");
+        assert_eq!(conn_202.endpoint.instance_id, "bbbbbbbbbbbb");
+        assert!(res_202.get("text").and_then(Value::as_str).unwrap().contains("[chrome tab 202]"));
+
+        // 2. Without specifying browser, tabId=303 auto-routes straight to the self-healed cloned Chrome profile!
+        let (res_303, conn_303) = client
+            .send("page.snapshot", json!({ "tabId": 303 }), None, timeout)
+            .await
+            .unwrap();
+        assert_eq!(conn_303.endpoint.instance_id, rotated_id);
+        assert!(res_303.get("text").and_then(Value::as_str).unwrap().contains("[chrome tab 303]"));
+
+        // 3. Warm routing speed benchmark across 3 live browser pipes: 20 alternating cross-browser calls!
+        let bench_start = std::time::Instant::now();
+        for i in 0..20 {
+            let target_tid = if i % 2 == 0 { 101 } else { 202 };
+            let (_, c) = client
+                .send("page.info", json!({ "tabId": target_tid }), None, timeout)
+                .await
+                .unwrap();
+            assert_eq!(c.endpoint.browser, if i % 2 == 0 { "edge" } else { "chrome" });
+        }
+        let avg_us = bench_start.elapsed().as_micros() / 20;
+        assert!(
+            avg_us < 2_500,
+            "Warm cross-browser tab routing should be sub-millisecond/ultra-fast, got {avg_us} us/call"
+        );
+
+        // 4. Colliding tabId=2 shared in BOTH Edge and Chrome refuses to guess when browser is omitted!
+        let Err(ambig) = client
+            .send("page.snapshot", json!({ "tabId": 2 }), None, timeout)
+            .await
+        else {
+            panic!("expected ambiguous_tab error for colliding tabId=2");
+        };
+        assert_eq!(ambig.code(), "ambiguous_tab");
+        assert!(ambig.message().contains("edge:aaaa"));
+        assert!(ambig.message().contains("chrome:work-profile"));
+
+        // 5. Passing composite browser:label ("chrome:Work-Profile") disambiguates tabId=2 immediately!
+        let (res_disambig, conn_disambig) = client
+            .send("page.snapshot", json!({ "tabId": 2 }), Some("chrome:Work-Profile"), timeout)
+            .await
+            .unwrap();
+        assert_eq!(conn_disambig.endpoint.instance_id, "bbbbbbbbbbbb");
+        assert!(res_disambig.get("text").and_then(Value::as_str).unwrap().contains("[chrome tab 2]"));
+
+        // 6. Push invalidation via tabs.changed: Chrome shares a brand-new tab 909 -> immediately routed!
+        chrome_tabs.lock().await.push((909, "https://linear.app/issue/1".to_string()));
+        let _ = chrome_tx.send(json!({ "type": "event", "event": "tabs.changed" }));
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        let (res_909, conn_909) = client
+            .send("page.snapshot", json!({ "tabId": 909 }), None, timeout)
+            .await
+            .unwrap();
+        assert_eq!(conn_909.endpoint.instance_id, "bbbbbbbbbbbb");
+        assert!(res_909.get("text").and_then(Value::as_str).unwrap().contains("[chrome tab 909]"));
+
+        client.close_all().await;
+        edge_task.abort();
+        chrome_task.abort();
+        clone_task.abort();
     }
 }

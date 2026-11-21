@@ -12,7 +12,7 @@ const g = globalThis as any;
 export const api: typeof chrome = (g.browser ?? g.chrome) as typeof chrome;
 
 /** Toolbar action API: `action` in MV3 (Chromium), `browserAction` in MV2 (Firefox). */
-export const actionApi: typeof chrome.action = (api.action ?? (api as unknown as { browserAction: typeof chrome.action }).browserAction);
+export const actionApi: typeof chrome.action = (api?.action ?? (api as unknown as { browserAction?: typeof chrome.action } | undefined)?.browserAction) as typeof chrome.action;
 
 export const isChromium = TARGET === 'chromium';
 

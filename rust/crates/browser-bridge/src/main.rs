@@ -16,6 +16,7 @@ Usage:
   BrowserBridge routines [<domain-or-url>] [--json]    Inspect learned Site Memory routines and recorded pitfalls.
   BrowserBridge activity [--limit <N>] [--json]        Inspect recent redacted session activity (origin+path only, <=500 entries).
   BrowserBridge rpc                        Run the managed local-script API on stdio.
+  BrowserBridge download [<url>] [--tab <id>] [--browser <sel>] [--output <path>] [--quality best|lowest] [--json]
   BrowserBridge screenshot <output-path> [--tab <id>] [--browser <sel>] [--full-page] [--selector <css>] [--ref <ref>] [--format png|jpeg] [--quality <10-100>] [--max-width <px>]
   BrowserBridge install --chromium-id <id> [--gecko-id <id>] [--browsers edge,chrome,chromium,firefox] [--host-path <exe>]
   BrowserBridge uninstall                  Remove native messaging registrations for the current user.
@@ -45,6 +46,7 @@ async fn main() {
         Some("routines") => routines_cmd(&args[1..]),
         Some("activity") => activity_cmd(&args[1..]),
         Some("rpc") => rpc::run_async().await,
+        Some("download") => download_async(&args[1..]).await,
         Some("screenshot") => screenshot_async(&args[1..]).await,
         Some("install") => installer::install(&args[1..], &mut io::stdout()),
         Some("uninstall") => installer::uninstall(&mut io::stdout()),
@@ -289,6 +291,89 @@ fn mcp_mode(args: &[String]) -> i32 {
         }
         Err(e) => {
             eprintln!("error writing {}: {e}", config_path.display());
+            1
+        }
+    }
+}
+
+async fn download_async(args: &[String]) -> i32 {
+    let mut url: Option<String> = None;
+    let mut output_path: Option<String> = None;
+    let mut tab_id: Option<i64> = None;
+    let mut browser: Option<String> = None;
+    let mut prefer_quality = "best".to_string();
+    let mut max_bytes = bridge_core::media::DEFAULT_MAX_DOWNLOAD_BYTES;
+    let mut as_json = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" => as_json = true,
+            "--tab" => {
+                i += 1;
+                tab_id = args.get(i).and_then(|v| v.parse::<i64>().ok());
+            }
+            "--browser" => {
+                i += 1;
+                browser = args.get(i).cloned();
+            }
+            "--output" | "-o" => {
+                i += 1;
+                output_path = args.get(i).cloned();
+            }
+            "--quality" => {
+                i += 1;
+                if let Some(q) = args.get(i) {
+                    prefer_quality = q.clone();
+                }
+            }
+            "--max-bytes" => {
+                i += 1;
+                if let Some(mb) = args.get(i).and_then(|v| v.parse::<usize>().ok()) {
+                    max_bytes = mb;
+                }
+            }
+            arg if !arg.starts_with('-') && url.is_none() => {
+                url = Some(arg.to_string());
+            }
+            other => {
+                eprintln!("Unknown download option: {other}");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+
+    let client = BridgeClient::new("cli-download", false);
+    let opts = bridge_core::media::DownloadOptions {
+        url: url.as_deref(),
+        output_path: output_path.as_deref(),
+        tab_id,
+        frame_id: None,
+        browser: browser.as_deref(),
+        prefer_quality: &prefer_quality,
+        max_bytes,
+    };
+    let result = bridge_core::media::download_media(&client, opts).await;
+    client.close_all().await;
+
+    match result {
+        Ok(res) => {
+            if as_json {
+                println!("{}", serde_json::to_string_pretty(&res).unwrap_or_else(|_| res.to_string()));
+            } else {
+                println!(
+                    "Saved {} ({} bytes, {}) -> {}",
+                    res.get("mimeType").and_then(serde_json::Value::as_str).unwrap_or("media"),
+                    res.get("bytes").and_then(serde_json::Value::as_u64).unwrap_or(0),
+                    res.get("delivery").and_then(serde_json::Value::as_str).unwrap_or("direct"),
+                    res.get("path").and_then(serde_json::Value::as_str).unwrap_or("")
+                );
+            }
+            0
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
             1
         }
     }

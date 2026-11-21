@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.0` → `v0.11.1`)
+# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.x` → `v0.12.0`)
 
-**Browser Bridge `v0.11.1`** hardens **Quality-Constrained `SiteLearner` v2** (read-safe semantic relocation, atomic cross-process playbook sync, route-scoped `>= 85%` content-completeness bandit, ordered wait modes, `k >= 3` hysteresis, clean-streak settle decay, and `_noLearn` benchmark isolation) and **Event-Driven DOM Readiness (`waitForDomQuiet`)**, adds **Bounded URL-Redacted Activity Logging (`BrowserBridge activity`)**, **Zero-Downtime NTFS Hot-Swap Installation**, **Ultra-Compact Query-Safe Share Prompts**, **`browser_batch` / `Page.batch(...)`**, and **Auto-Routine Trajectory Distillation** across **24 built-in timestamped playbooks (`routines/*.json`)**.
+**Browser Bridge `v0.12.0`** introduces **Zero-Collision, Sub-Millisecond Multi-Browser & Multi-Profile Auto-Routing** (`< 1 ms` cloned-profile `instanceId` rotation, event-driven `O(1)` `tabId` router across Edge/Chrome/Brave/Firefox, unified `browser:label` / `browser:prefix` selectors, and `[ambiguous_tab]` safety guard) and **Zero-Dependency Native Streaming Media Discovery & HLS/fMP4 Downloader (`browser_media`, `browser_download`, `Page.media()`, `Page.download_media()`, `BrowserBridge download`)**, alongside **Quality-Constrained `SiteLearner` v2 (`waitForDomQuiet`)** and **24 built-in timestamped playbooks (`routines/*.json`)**.
 
 ---
 

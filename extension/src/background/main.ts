@@ -27,7 +27,7 @@ import { dropTabNetworkCapture } from './network.ts';
 import { callFrame, tabUrl } from './page.ts';
 import { resolveLocale } from '../shared/i18n.ts';
 import { isShareableUrl } from '../popup/prompt.ts';
-import { getInstanceId, loadSettings, settings, updateSettings, type Settings } from './settings.ts';
+import { adoptInstanceId, getInstanceId, loadSettings, settings, updateSettings, type Settings } from './settings.ts';
 import { TabRegistry, type AccessMode } from './tabs.ts';
 
 const registry = new TabRegistry();
@@ -76,6 +76,11 @@ async function handleRequest(message: RequestMessage): Promise<void> {
 
 function onHostMessage(message: HostToExtension): void {
   switch (message?.type) {
+    case 'hostHello':
+      if (typeof message.instanceId === 'string' && message.instanceId) {
+        void adoptInstanceId(message.instanceId);
+      }
+      break;
     case 'session':
       if (message.event === 'open') registry.openSession(message.session, message.client);
       else void releaseTabs(registry.closeSession(message.session));

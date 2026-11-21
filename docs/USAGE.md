@@ -142,6 +142,10 @@ BrowserBridge status --json
 BrowserBridge screenshot page.png --full-page
 BrowserBridge screenshot chart.png --tab 42 --browser Work --selector "#latency-chart"
 
+# Download non-DRM progressive video/audio or assemble HLS (.m3u8 / fMP4) streams directly to disk
+BrowserBridge download --tab 42 --output video.mp4
+BrowserBridge download https://cdn.example.com/streams/master.m3u8 --tab 42 --quality best --json
+
 # Inspect or reset learned Site Memory routines & performance profiles
 BrowserBridge routines
 BrowserBridge routines app.diagrams.net

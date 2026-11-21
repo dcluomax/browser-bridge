@@ -159,6 +159,53 @@ pub async fn handle_line(line: &str, client: &BridgeClient) -> Value {
         };
     }
 
+    if method == "page.download" {
+        let url = params
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let out_path = params
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let prefer_quality = params
+            .get("preferQuality")
+            .and_then(Value::as_str)
+            .unwrap_or("best");
+        let max_bytes = params
+            .get("maxBytes")
+            .and_then(Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(bridge_core::media::DEFAULT_MAX_DOWNLOAD_BYTES);
+        let tab_id = params.get("tabId").and_then(Value::as_i64);
+        let frame_id = params.get("frameId").and_then(Value::as_i64);
+        let dl_opts = bridge_core::media::DownloadOptions {
+            url,
+            output_path: out_path,
+            tab_id,
+            frame_id,
+            browser: selector,
+            prefer_quality,
+            max_bytes,
+        };
+        return match bridge_core::media::download_media(client, dl_opts).await {
+            Ok(res) => json!({ "id": id, "ok": true, "result": res }),
+            Err(msg) => err_resp(
+                id,
+                if msg.contains("[drm_protected]") {
+                    "drm_protected"
+                } else if msg.contains("[not_found]") {
+                    "not_found"
+                } else {
+                    "download_failed"
+                },
+                &msg,
+            ),
+        };
+    }
+
     if matches!(method, "page.batch" | "routine.batch") {
         let Some(raw_steps) = params.get("steps") else {
             return err_resp(id, "bad_request", "page.batch requires 'steps' array.");

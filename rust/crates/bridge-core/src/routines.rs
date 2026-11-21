@@ -1940,7 +1940,7 @@ pub fn seed_builtin_playbooks_to_disk() -> usize {
         if let Ok(pretty) = serde_json::to_string_pretty(&merged) {
             let content = format!("{pretty}\n");
             let unchanged = std::fs::read_to_string(&path).ok().as_deref() == Some(content.as_str());
-            if !unchanged && std::fs::write(&path, content).is_ok() {
+            if !unchanged && write_string_atomic(&path, &content).is_ok() {
                 written += 1;
             }
         }
@@ -2370,6 +2370,8 @@ pub fn format_site_memory_hint(url_or_domain: &str) -> Option<String> {
 #[serde(rename_all = "camelCase")]
 pub struct TraceEvent {
     pub seq: u64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
     pub tab_id: Option<i64>,
     pub domain: String,
     pub method: String,
@@ -2380,22 +2382,44 @@ pub struct TraceEvent {
     pub error_message: Option<String>,
 }
 
-/// Per-session in-memory tracker that remembers tab->URL mappings, records attempts/detours, and tracks hinted domains.
+/// Per-session in-memory tracker that remembers `(pipe_scope, tabId) -> URL` mappings, records attempts/detours, and tracks hinted domains.
 #[derive(Default)]
 pub struct SessionTracker {
     seq: u64,
-    pub tab_urls: HashMap<i64, String>,
+    pub scoped_tab_urls: HashMap<(String, i64), String>,
     pub hinted_domains: HashSet<String>,
     pub trace: VecDeque<TraceEvent>,
 }
 
 impl SessionTracker {
-    pub fn observe_url(&mut self, tab_id: Option<i64>, url: Option<&str>) -> Option<String> {
-        if let (Some(id), Some(u)) = (tab_id, url.filter(|s| !s.is_empty())) {
-            self.tab_urls.insert(id, u.to_string());
+    pub fn observe_scoped_url(&mut self, scope: &str, tab_id: Option<i64>, url: Option<&str>) -> Option<String> {
+        let Some(id) = tab_id else {
+            return None;
+        };
+        let key = (scope.to_string(), id);
+        if let Some(u) = url.filter(|s| !s.is_empty()) {
+            self.scoped_tab_urls.insert(key, u.to_string());
             return Some(u.to_string());
         }
-        tab_id.and_then(|id| self.tab_urls.get(&id).cloned())
+        self.scoped_tab_urls.get(&key).cloned()
+    }
+
+    /// Returns the cached URL for `tab_id` only when scoped to `scope` or uniquely owned across all seen browser scopes.
+    pub fn unique_url_for_tab(&self, scope: Option<&str>, tab_id: i64) -> Option<String> {
+        if let Some(s) = scope.filter(|s| !s.is_empty()) {
+            return self.scoped_tab_urls.get(&(s.to_string(), tab_id)).cloned();
+        }
+        let mut matches = self
+            .scoped_tab_urls
+            .iter()
+            .filter(|((_, tid), _)| *tid == tab_id)
+            .map(|(_, url)| url);
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            // Multiple connected browsers observed the same integer tabId; refuse cross-browser cache hit.
+            return None;
+        }
+        Some(first.clone())
     }
 
     pub fn should_inject_hint(&mut self, url_or_domain: &str) -> Option<String> {
@@ -2407,8 +2431,10 @@ impl SessionTracker {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record_call(
         &mut self,
+        scope: &str,
         tab_id: Option<i64>,
         url_hint: Option<&str>,
         method: &str,
@@ -2420,9 +2446,9 @@ impl SessionTracker {
             Ok(val) => {
                 let res_tab = val.get("tabId").and_then(Value::as_i64).or(tab_id);
                 let res_url = val.get("url").and_then(Value::as_str).or(url_hint);
-                self.observe_url(res_tab, res_url)
+                self.observe_scoped_url(scope, res_tab, res_url)
             }
-            Err(_) => self.observe_url(tab_id, url_hint),
+            Err(_) => self.observe_scoped_url(scope, tab_id, url_hint),
         };
         let domain = resolved_url
             .as_deref()
@@ -2438,6 +2464,7 @@ impl SessionTracker {
                 }
                 self.trace.push_back(TraceEvent {
                     seq: self.seq,
+                    scope: scope.to_string(),
                     tab_id,
                     domain,
                     method: method.to_string(),
@@ -2454,6 +2481,7 @@ impl SessionTracker {
                 }
                 self.trace.push_back(TraceEvent {
                     seq: self.seq,
+                    scope: scope.to_string(),
                     tab_id,
                     domain,
                     method: method.to_string(),
@@ -4211,6 +4239,7 @@ pub fn canonical_step_method(op: &str) -> Result<&'static str, String> {
         "locate" | "page.locate" => Ok("page.locate"),
         "query" | "get_element" | "page.query" => Ok("page.query"),
         "queryAll" | "page.queryAll" => Ok("page.queryAll"),
+        "media" | "page.media" => Ok("page.media"),
         "snapshot" | "page.snapshot" => Ok("page.snapshot"),
         "text" | "get_text" | "page.text" => Ok("page.text"),
         "screenshot" | "page.screenshot" => Ok("page.screenshot"),
@@ -4232,6 +4261,7 @@ pub fn is_read_safe_step(method: &str) -> bool {
             | "page.locate"
             | "page.query"
             | "page.queryAll"
+            | "page.media"
             | "page.waitFor"
             | "page.screenshot"
             | "page.fetch"

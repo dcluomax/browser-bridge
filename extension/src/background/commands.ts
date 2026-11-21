@@ -16,6 +16,7 @@ import {
   startHandoffWait,
 } from './handoff.ts';
 import { dropTabNetworkCapture, readNetworkCapture, startNetworkCapture } from './network.ts';
+import { inspectTabMedia } from './media.ts';
 import {
   armMainDialog,
   assertScriptable,
@@ -224,6 +225,7 @@ export class Commands {
         case 'page.locate': return await this.locate(session, params);
         case 'page.query': return await this.query(session, params);
         case 'page.queryAll': return await this.queryAll(session, params);
+        case 'page.media': return await this.media(session, params);
         case 'page.fetch': return await this.fetch(session, params);
         case 'page.click': return await this.click(session, params);
         case 'page.drag': return await this.drag(session, params);
@@ -266,6 +268,7 @@ export class Commands {
       method === 'page.locate' ||
       method === 'page.query' ||
       method === 'page.queryAll' ||
+      method === 'page.media' ||
       method === 'page.waitFor' ||
       method === 'page.screenshot' ||
       method === 'page.network' ||
@@ -831,6 +834,14 @@ export class Commands {
       this.registry.requireTabWrite(tab.id!, `page.fetch (${httpMethod})`);
     }
     return { tabId: tab.id, ...await fetchFromPage(tab, params) };
+  }
+
+  private async media(session: string, params: Params) {
+    const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
+    return await inspectTabMedia(tab, {
+      includeAudio: bool(params, 'includeAudio') !== false,
+      scrollIntoView: bool(params, 'scrollIntoView') !== false,
+    });
   }
 
   private async activate(session: string, params: Params) {

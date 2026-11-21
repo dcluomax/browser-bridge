@@ -5,14 +5,14 @@
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
-[![Release v0.11.1](https://img.shields.io/badge/Release-v0.11.1-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
+[![Release v0.12.0](https://img.shields.io/badge/Release-v0.12.0-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
 [![100% Local](https://img.shields.io/badge/100%25%20Local-0%20Cloud%20Relay-0284c7)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Zero-Port Secure](https://img.shields.io/badge/Secure-0%20TCP%20Ports%20%7C%203--Layer%20ACL-059669)](docs/SECURITY_MODEL.md)
 [![Native Fast](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20Pipe%20IPC-d97706)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Self-Evolving](https://img.shields.io/badge/Website%20Optimizations-24%20Site%20JSONs%20%7C%20Up%20to%201800x%20Faster-6366f1)](#website-optimizations)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
 
-**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.11.1)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.12.0)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -30,7 +30,7 @@ Unlike headless browser drivers (Playwright, Selenium, Puppeteer) or cloud brows
 | --- | --- | --- |
 | **1. 100% LOCAL** | Runs strictly on your machine inside your daily browser — zero cloud relays, zero remote containers, zero WebDriver downloads | Instant access to your live corporate SSO, MFA sessions, cookies, and extensions with zero re-login friction |
 | **2. ZERO-PORT SECURE** | **0 open TCP/WebSocket ports**; OS-authenticated Windows SID Named Pipes (`CurrentUserOnly`) & `0700`/`0600` Unix sockets + **3-layer Read-Only / Read-Write ACLs** + password/JWT redaction | Web pages and other OS users cannot reach the bridge; unshared personal tabs remain completely invisible |
-| **3. NATIVE FAST** | **~1.5 MB standalone Rust binary** (~8 MB RAM), **`~1.1 ms` median Direct Pipe RTT**, 1-RTT lazy DOM content engine, background focus-free screenshots, and 0-dependency Python SDK | Sub-millisecond local IPC with zero Node/Python driver bloat or browser startup overhead |
+| **3. NATIVE FAST** | **~1.5 MB standalone Rust binary** (~8 MB RAM), **`< 0.2 ms`–`~1.1 ms` Direct Pipe RTT**, event-driven **`O(1)` zero-collision multi-browser/profile `tabId` router**, 1-RTT lazy DOM engine, focus-free screenshots, zero-dep HLS/fMP4 media downloader, and 0-dep Python SDK | Sub-millisecond local IPC across simultaneous Edge, Chrome, Brave & Firefox profiles with zero Node/Python driver bloat |
 | **4. SELF-EVOLVING** | **Zero-config engine mitigations** + **quality-constrained `SiteLearner` v2** (`waitForDomQuiet` DOM readiness, content-completeness floor) + **24 timestamped `routines/*.json`** (`schemaVersion: 2`, `PATCH` `N=20` gate, semantic relocation & `[STALE]` guard) + **`browser_demonstrate`** + W3C **WebMCP** | Eliminates multi-second post-network stalls (up to **15×–1,800×** on stalled third-party/SSE baselines) while enforcing **`>= 80–85%` content completeness** so fast reads never return unhydrated shells |
 
 ### Headless Drivers vs. Browser Bridge
@@ -281,7 +281,7 @@ Read the complete **[Python SDK & Direct IPC Reference](python/README.md)** and 
 | Document | Contents |
 | --- | --- |
 | **[docs/INSTALL.md](docs/INSTALL.md)** | AI Agent 1-Prompt installation playbook (zero-build SHA-256 prebuilt release setup) |
-| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.10.x` / `v0.11.0` → `v0.11.1` Upgrade Notes (`SiteLearner` v2, `waitForDomQuiet`, `BrowserBridge activity`, `browser_batch` & 24 site playbooks) |
+| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.10.x` / `v0.11.x` → `v0.12.0` Upgrade Notes (zero-collision multi-browser routing, `browser_media` & HLS/fMP4 download, `SiteLearner` v2 & 24 site playbooks) |
 | **[docs/VERSIONING.md](docs/VERSIONING.md)** | SemVer & Site-Optimization Update Spec (**website JSON updates bump 3rd `PATCH` digit `0.10.Z`**) |
 | **[CHANGELOG.md](CHANGELOG.md)** | Full release history and measured network-excluded per-site speedup benchmarks |
 | **[llms.txt](llms.txt)** | Machine-readable repository index for LLM coding agents |

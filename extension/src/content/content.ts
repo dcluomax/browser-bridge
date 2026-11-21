@@ -7,7 +7,7 @@
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
 
-const CONTENT_VERSION = '0.11.1';
+const CONTENT_VERSION = '0.12.0';
 
 interface SnapshotOptions {
   maxChars?: number;

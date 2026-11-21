@@ -195,6 +195,7 @@ class _IpcPeer:
         self.sock = sock
         self._buf = bytearray()
         self._closed = False
+        self.tabs_dirty = False
         self._win_handle: int | None = None
         if self.sock is not None:
             self.sock.setblocking(False)
@@ -272,6 +273,8 @@ class _IpcPeer:
                         continue
                     msg = json.loads(raw.decode("utf-8"))
                     if isinstance(msg, dict) and msg.get("type") == "event":
+                        if msg.get("event") == "tabs.changed":
+                            self.tabs_dirty = True
                         continue
                     if not isinstance(msg, dict):
                         self.close()
@@ -313,10 +316,84 @@ class _IpcPeer:
                 pass
 
 
+def _normalize_label_slug(value: str) -> str:
+    collapsed = re.sub(r"[\s\-_\[\]]+", "-", value.strip().lower()).strip("-")
+    return collapsed
+
+
+def _label_matches(actual: str, query: str) -> bool:
+    if not actual or not query:
+        return False
+    if actual.lower() == query.lower():
+        return True
+    s_act = _normalize_label_slug(actual)
+    s_qry = _normalize_label_slug(query)
+    return bool(s_act) and s_act == s_qry
+
+
+def _is_hex_prefix(value: str) -> bool:
+    return 4 <= len(value) <= 12 and bool(re.fullmatch(r"[0-9a-fA-F]{4,12}", value))
+
+
+def _choose_endpoint_candidates(
+    endpoints: list[tuple[str, str, str]],
+    selector: str,
+    labels: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    sel = selector.strip()
+    if not sel:
+        return []
+    if ":" in sel:
+        b_raw, q_raw = sel.split(":", 1)
+        b = b_raw.strip().lower()
+        q = q_raw.strip()
+        if not b or not q:
+            return []
+        pool = [ep for ep in endpoints if ep[1].lower() == b]
+        if not pool and b == "chrome":
+            pool = [ep for ep in endpoints if ep[1] == "chromium"]
+        if not pool:
+            return []
+        exact_id = [ep for ep in pool if ep[2].lower() == q.lower()]
+        if exact_id:
+            return exact_id
+        by_lbl = [ep for ep in pool if _label_matches(labels.get(ep[0], ""), q)]
+        if by_lbl:
+            return by_lbl
+        if _is_hex_prefix(q):
+            q_low = q.lower()
+            by_pref = [ep for ep in pool if ep[2].startswith(q_low)]
+            if by_pref:
+                return by_pref
+        return []
+
+    exact_id = [ep for ep in endpoints if ep[2].lower() == sel.lower()]
+    if exact_id:
+        return exact_id
+    by_lbl = [ep for ep in endpoints if _label_matches(labels.get(ep[0], ""), sel)]
+    if by_lbl:
+        return by_lbl
+    by_browser = [ep for ep in endpoints if ep[1].lower() == sel.lower()]
+    if by_browser:
+        return by_browser
+    if sel.lower() == "chrome":
+        by_chromium = [ep for ep in endpoints if ep[1] == "chromium"]
+        if by_chromium:
+            return by_chromium
+    if _is_hex_prefix(sel):
+        low = sel.lower()
+        by_pref = [ep for ep in endpoints if ep[2].startswith(low)]
+        if by_pref:
+            return by_pref
+    return []
+
+
 class _DirectTransport:
     """Connects directly to the browser native-host pipe or Unix socket without spawning an rpc process."""
 
     _PRIORITY = ("edge", "chrome", "chromium", "firefox", "unknown")
+    _CACHED_USER_KEY: str | None = None
+    _ENDPOINT_CACHE_TTL_S = 0.25
 
     def __init__(self, selector: str | None = None):
         self._selector = selector
@@ -324,10 +401,20 @@ class _DirectTransport:
         self._next_id = 1
         self._closed = False
         self._peer: _IpcPeer | None = None
+        self._active_pipe: str | None = None
+        self._multi_enabled = False
+        self._peers: dict[str, tuple[tuple[str, str, str], _IpcPeer, dict[str, Any]]] = {}
+        self._tab_owners: dict[int, list[dict[str, Any]]] = {}
+        self._controllable_counts: dict[str, int] = {}
+        self._endpoint_cache: tuple[float, tuple[str, ...], list[tuple[str, str, str]]] | None = None
+        self._synced_pipe_sig: tuple[str, ...] | None = None
         self.info: dict[str, Any] = {}
 
-    @staticmethod
-    def _current_user_key() -> str:
+    @classmethod
+    def _current_user_key(cls) -> str:
+        if cls._CACHED_USER_KEY is not None:
+            return cls._CACHED_USER_KEY
+        resolved: str | None = None
         if os.name == "nt":
             try:
                 advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
@@ -354,15 +441,19 @@ class _DirectTransport:
                                 str_ptr = wintypes.LPWSTR()
                                 if advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(str_ptr)):
                                     try:
-                                        return str(str_ptr.value)
+                                        resolved = str(str_ptr.value)
                                     finally:
                                         kernel32.LocalFree(str_ptr)
                     finally:
                         kernel32.CloseHandle(token)
             except OSError:
                 pass
-            return re.sub(r"[^A-Za-z0-9-]", "-", os.environ.get("USERNAME", "user")) or "user"
-        return re.sub(r"[^A-Za-z0-9-]", "-", os.environ.get("USER", "user")) or "user"
+            if not resolved:
+                resolved = re.sub(r"[^A-Za-z0-9-]", "-", os.environ.get("USERNAME", "user")) or "user"
+        else:
+            resolved = re.sub(r"[^A-Za-z0-9-]", "-", os.environ.get("USER", "user")) or "user"
+        cls._CACHED_USER_KEY = resolved
+        return resolved
 
     @staticmethod
     def _unix_socket_dir() -> Path:
@@ -401,6 +492,22 @@ class _DirectTransport:
                 endpoints.append((name, parts[2], parts[3]))
         return endpoints
 
+    def _discover_cached(self, force: bool = False) -> tuple[list[tuple[str, str, str]], tuple[str, ...]]:
+        now = time.monotonic()
+        any_dirty = any(entry[1].tabs_dirty or entry[1]._closed for entry in self._peers.values())
+        if (
+            not force
+            and not any_dirty
+            and self._endpoint_cache is not None
+            and self._endpoint_cache[2]
+            and (now - self._endpoint_cache[0]) < self._ENDPOINT_CACHE_TTL_S
+        ):
+            return list(self._endpoint_cache[2]), self._endpoint_cache[1]
+        eps = self._discover()
+        sig = tuple(sorted(e[0] for e in eps))
+        self._endpoint_cache = (now, sig, eps)
+        return list(eps), sig
+
     @classmethod
     def _open_pipe(cls, pipe_name: str, timeout_s: float = 5.0) -> _IpcPeer:
         if os.name == "nt":
@@ -424,47 +531,216 @@ class _DirectTransport:
         return _IpcPeer(None, sock)
 
     @classmethod
-    def _handshake(cls, pipe_name: str) -> tuple[_IpcPeer, dict[str, Any]]:
+    def _handshake(cls, pipe_name: str, subscribe_events: bool = True) -> tuple[_IpcPeer, dict[str, Any]]:
         peer = cls._open_pipe(pipe_name)
         try:
-            hello = json.dumps({"type": "hello", "client": "python-sdk", "pid": os.getpid(), "events": False}, ensure_ascii=False)
+            hello = json.dumps(
+                {"type": "hello", "client": "python-sdk", "pid": os.getpid(), "events": subscribe_events},
+                ensure_ascii=False,
+            )
             peer.send_line(hello)
             return peer, peer.recv_message(5.0)
         except BaseException:
             peer.close()
             raise
 
+    def _ensure_peers_parallel(self, endpoints: list[tuple[str, str, str]]) -> None:
+        live_names = {ep[0] for ep in endpoints}
+        for name in list(self._peers.keys()):
+            if name not in live_names or self._peers[name][1]._closed:
+                _, dead_peer, _ = self._peers.pop(name)
+                dead_peer.close()
+        missing = [ep for ep in endpoints if ep[0] not in self._peers]
+        if not missing:
+            return
+        if len(missing) == 1:
+            ep = missing[0]
+            try:
+                peer, info = self._handshake(ep[0], True)
+                self._peers[ep[0]] = (ep, peer, info)
+            except (OSError, ValueError, BridgeError):
+                pass
+            return
+
+        results: dict[str, tuple[tuple[str, str, str], _IpcPeer, dict[str, Any]]] = {}
+        res_lock = threading.Lock()
+
+        def _worker(ep: tuple[str, str, str]) -> None:
+            try:
+                peer, info = self._handshake(ep[0], True)
+                with res_lock:
+                    results[ep[0]] = (ep, peer, info)
+            except (OSError, ValueError, BridgeError):
+                pass
+
+        threads = [threading.Thread(target=_worker, args=(ep,), daemon=True) for ep in missing]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.5)
+        self._peers.update(results)
+
+    def _raw_peer_call(self, peer: _IpcPeer, method: str, parameters: dict[str, Any], timeout_ms: float) -> Any:
+        request_id = self._next_id
+        self._next_id += 1
+        encoded = json.dumps({"id": request_id, "method": method, "params": parameters}, ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode("utf-8")) > 900_000:
+            raise BridgeError("request_too_large", "Request exceeds the native messaging envelope. Upload large data through a page-supported transfer API.")
+        peer.send_line(encoded)
+        response = peer.recv_message(timeout_ms / 1000.0 + 5.0)
+        if response.get("id") != request_id:
+            peer.close()
+            raise BridgeError("protocol_error", "Response id does not match the request.")
+        if response.get("ok") is not True:
+            details = response.get("error")
+            if not isinstance(details, dict) or not isinstance(details.get("message"), str):
+                raise BridgeError("protocol_error", "Response failure is missing error details.")
+            code = details.get("code", "error")
+            exception = BridgeTimeoutError if code == "timeout" else BridgeError
+            raise exception(code, details["message"])
+        return response.get("result")
+
+    def _sync_inventory(self, endpoints: list[tuple[str, str, str]], sig: tuple[str, ...]) -> None:
+        self._ensure_peers_parallel(endpoints)
+        inv_results: dict[str, dict[str, Any]] = {}
+        inv_lock = threading.Lock()
+
+        def _fetch_inv(pipe_name: str, entry: tuple[tuple[str, str, str], _IpcPeer, dict[str, Any]]) -> None:
+            _, peer, _ = entry
+            try:
+                peer.tabs_dirty = False
+                res = self._raw_peer_call(peer, "tabs.inventory", {"_noLearn": True}, 1500.0)
+                if isinstance(res, dict):
+                    with inv_lock:
+                        inv_results[pipe_name] = res
+            except (OSError, ValueError, BridgeError):
+                pass
+
+        items = list(self._peers.items())
+        if len(items) <= 1:
+            for k, v in items:
+                _fetch_inv(k, v)
+        else:
+            # Assign distinct request ids safely before parallel send/recv on separate pipes
+            req_frames: list[tuple[str, _IpcPeer, int, str]] = []
+            for pipe_name, (_, peer, _) in items:
+                peer.tabs_dirty = False
+                rid = self._next_id
+                self._next_id += 1
+                frame = json.dumps({"id": rid, "method": "tabs.inventory", "params": {"_noLearn": True}}, ensure_ascii=False)
+                req_frames.append((pipe_name, peer, rid, frame))
+
+            def _parallel_inv(p_name: str, p_peer: _IpcPeer, rid: int, frame: str) -> None:
+                try:
+                    p_peer.send_line(frame)
+                    resp = p_peer.recv_message(2.0)
+                    if resp.get("id") == rid and resp.get("ok") is True and isinstance(resp.get("result"), dict):
+                        with inv_lock:
+                            inv_results[p_name] = resp["result"]
+                except (OSError, ValueError, BridgeError):
+                    pass
+
+            threads = [threading.Thread(target=_parallel_inv, args=rf, daemon=True) for rf in req_frames]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=2.5)
+
+        tab_owners: dict[int, list[dict[str, Any]]] = {}
+        ctrl_counts: dict[str, int] = {}
+        for pipe_name, (ep, _, info) in self._peers.items():
+            inv = inv_results.get(pipe_name, {})
+            tabs = inv.get("tabs") if isinstance(inv, dict) else None
+            label = str(info.get("label") or "")
+            ctrl = 0
+            for tab in tabs or []:
+                if not isinstance(tab, dict) or not isinstance(tab.get("tabId"), int):
+                    continue
+                tid = int(tab["tabId"])
+                controllable = bool(tab.get("controllable", True))
+                if controllable:
+                    ctrl += 1
+                tab_owners.setdefault(tid, []).append({
+                    "pipe_name": pipe_name,
+                    "browser": ep[1],
+                    "instance_id": ep[2],
+                    "label": label,
+                    "url": str(tab.get("url") or ""),
+                    "controllable": controllable,
+                })
+            ctrl_counts[pipe_name] = ctrl
+
+        self._tab_owners = tab_owners
+        self._controllable_counts = ctrl_counts
+        self._synced_pipe_sig = sig
+
+    def _ensure_inventory_fresh(self, endpoints: list[tuple[str, str, str]], sig: tuple[str, ...], force: bool = False) -> None:
+        if len(endpoints) < 2:
+            return
+        any_dirty = any(entry[1].tabs_dirty or entry[1]._closed for entry in self._peers.values())
+        if force or any_dirty or self._synced_pipe_sig != sig:
+            self._sync_inventory(endpoints, sig)
+
+    def _select_active(self, pipe_name: str) -> tuple[_IpcPeer, dict[str, Any]]:
+        _, peer, info = self._peers[pipe_name]
+        self._active_pipe = pipe_name
+        self._peer = peer
+        self.info = info
+        return peer, info
+
     def connect(self) -> dict[str, Any]:
-        endpoints = self._discover()
+        endpoints, sig = self._discover_cached(force=True)
         if not endpoints:
             raise BridgeError("unavailable", "No browser is connected to Browser Bridge. Make sure Edge, Chrome or Firefox is running with the Browser Bridge extension loaded (toolbar icon shows a green dot) and that the native host is installed.")
         sel = (self._selector or "").strip()
-        chosen: tuple[str, str, str] | None = None
         if sel:
-            chosen = next((e for e in endpoints if e[2].lower() == sel.lower()), None)
-            if chosen is None:
-                connected: list[tuple[tuple[str, str, str], _IpcPeer, dict[str, Any]]] = []
-                for ep in endpoints:
-                    try:
-                        peer, info = self._handshake(ep[0])
-                        connected.append((ep, peer, info))
-                    except (OSError, ValueError, BridgeError):
-                        pass
-                match = next((c for c in connected if (c[2].get("label") or "").lower() == sel.lower()), None)
-                if match is None:
-                    match = next((c for c in connected if c[0][1].lower() == sel.lower() or (sel.lower() == "chrome" and c[0][1] == "chromium")), None)
-                for c in connected:
-                    if c is not match:
-                        c[1].close()
-                if match is None:
-                    raise BridgeError("unavailable", f'No connected browser matches "{sel}".')
-                chosen, self._peer, browser_info = match
+            # Fast single-pipe shortcut when selector uniquely matches instanceId or sole browser without needing label handshake
+            direct = _choose_endpoint_candidates(endpoints, sel, {}) if ":" not in sel else []
+            if len(direct) == 1:
+                chosen = direct[0]
+                peer, browser_info = self._handshake(chosen[0], True)
+                self._peers[chosen[0]] = (chosen, peer, browser_info)
+                self._select_active(chosen[0])
             else:
-                self._peer, browser_info = self._handshake(chosen[0])
+                self._ensure_peers_parallel(endpoints)
+                labels = {k: str(v[2].get("label") or "") for k, v in self._peers.items()}
+                live_eps = [v[0] for v in self._peers.values()]
+                matches = _choose_endpoint_candidates(live_eps, sel, labels)
+                if not matches:
+                    raise BridgeError("unavailable", f'No connected browser matches "{sel}".')
+                if len(matches) > 1:
+                    choices = [
+                        f"{m[1]}:{labels[m[0]]} ({m[2]})" if labels.get(m[0]) else f"{m[1]}:{m[2]}"
+                        for m in matches
+                    ]
+                    for m in list(self._peers.keys()):
+                        self._peers.pop(m)[1].close()
+                    raise BridgeError(
+                        "ambiguous_browser",
+                        f'Multiple connected browsers match "{sel}": {", ".join(choices)}. Pass "{matches[0][1]}:{matches[0][2][:4]}" or browser:label to disambiguate.',
+                    )
+                chosen = matches[0]
+                for pipe_name in list(self._peers.keys()):
+                    if pipe_name != chosen[0]:
+                        self._peers.pop(pipe_name)[1].close()
+                _, _, browser_info = self._peers[chosen[0]]
+                self._select_active(chosen[0])
         else:
+            self._multi_enabled = True
             endpoints.sort(key=lambda e: self._PRIORITY.index(e[1]) if e[1] in self._PRIORITY else 99)
-            chosen = endpoints[0]
-            self._peer, browser_info = self._handshake(chosen[0])
+            if len(endpoints) == 1:
+                chosen = endpoints[0]
+                peer, browser_info = self._handshake(chosen[0], True)
+                self._peers[chosen[0]] = (chosen, peer, browser_info)
+                self._select_active(chosen[0])
+            else:
+                self._sync_inventory(endpoints, sig)
+                live_eps = [ep for ep in endpoints if ep[0] in self._peers]
+                if not live_eps:
+                    raise BridgeError("unavailable", "Could not connect to any discovered Browser Bridge endpoint.")
+                with_tabs = [ep for ep in live_eps if self._controllable_counts.get(ep[0], 0) > 0]
+                chosen = with_tabs[0] if len(with_tabs) == 1 else live_eps[0]
+                _, browser_info = self._select_active(chosen[0])
 
         status = self.call("status", {}, 30_000)
         return {
@@ -533,6 +809,61 @@ class _DirectTransport:
             "byteLength": len(payload),
         }
 
+    def _route_multi_browser_tab(self, method: str, parameters: dict[str, Any]) -> None:
+        if not self._multi_enabled or self._selector:
+            return
+        tid = parameters.get("tabId")
+        if not isinstance(tid, int) or isinstance(tid, bool):
+            return
+        endpoints, sig = self._discover_cached(force=False)
+        if len(endpoints) < 2:
+            return
+        self._ensure_inventory_fresh(endpoints, sig, force=False)
+        live_names = {e[0] for e in endpoints}
+        owners = [o for o in self._tab_owners.get(tid, []) if o["pipe_name"] in live_names]
+        if not owners:
+            self._ensure_inventory_fresh(endpoints, sig, force=True)
+            owners = [o for o in self._tab_owners.get(tid, []) if o["pipe_name"] in live_names]
+        if len(owners) == 1:
+            owner_pipe = owners[0]["pipe_name"]
+            if owner_pipe in self._peers and owner_pipe != self._active_pipe:
+                self._select_active(owner_pipe)
+        elif len(owners) >= 2:
+            tags = [
+                f"{o['browser']}:{_normalize_label_slug(o['label'])}" if o["label"] else f"{o['browser']}:{o['instance_id'][:4]}"
+                for o in owners
+            ]
+            raise BridgeError(
+                "ambiguous_tab",
+                f'Tab {tid} is shared in multiple connected browsers ({", ".join(tags)}). Instantiate BrowserBridge(browser="{tags[0]}") to disambiguate.',
+            )
+
+    def _record_response_tabs(self, method: str, parameters: dict[str, Any], result: Any) -> None:
+        if not self._multi_enabled or not self._active_pipe or self._active_pipe not in self._peers or not isinstance(result, dict):
+            return
+        pipe_name = self._active_pipe
+        if method == "tabs.close":
+            closed_id = result.get("closed")
+            if isinstance(closed_id, int) and closed_id in self._tab_owners:
+                self._tab_owners[closed_id] = [o for o in self._tab_owners[closed_id] if o["pipe_name"] != pipe_name]
+            for cid in result.get("closedTabs") or []:
+                if isinstance(cid, int) and cid in self._tab_owners:
+                    self._tab_owners[cid] = [o for o in self._tab_owners[cid] if o["pipe_name"] != pipe_name]
+            return
+        tid = result.get("tabId") if isinstance(result.get("tabId"), int) else parameters.get("tabId")
+        if isinstance(tid, int) and not isinstance(tid, bool):
+            ep, _, info = self._peers[pipe_name]
+            owners = self._tab_owners.setdefault(tid, [])
+            if not any(o["pipe_name"] == pipe_name for o in owners):
+                owners.append({
+                    "pipe_name": pipe_name,
+                    "browser": ep[1],
+                    "instance_id": ep[2],
+                    "label": str(info.get("label") or ""),
+                    "url": str(result.get("url") or ""),
+                    "controllable": True,
+                })
+
     def call(self, method: str, parameters: dict[str, Any], timeout: float, browser: str | None = None) -> Any:
         _timeout(timeout)
         if method == "request.fetch":
@@ -549,36 +880,27 @@ class _DirectTransport:
                 raise BridgeError("closed", "The Browser Bridge connection is closed.")
             if method == "bridge.connect":
                 return self.connect()
-            request_id = self._next_id
-            self._next_id += 1
-            encoded = json.dumps({"id": request_id, "method": method, "params": parameters}, ensure_ascii=False, allow_nan=False)
-            if len(encoded.encode("utf-8")) > 900_000:
-                raise BridgeError("request_too_large", "Request exceeds the native messaging envelope. Upload large data through a page-supported transfer API.")
+            self._route_multi_browser_tab(method, parameters)
+            assert self._peer is not None
             try:
-                self._peer.send_line(encoded)
-                response = self._peer.recv_message(timeout / 1000.0 + 5.0)
-            except BridgeError:
-                self.close()
+                result = self._raw_peer_call(self._peer, method, parameters, timeout)
+            except BridgeError as err:
+                if err.code in {"connection_lost", "closed", "protocol_error", "timeout"}:
+                    self.close()
                 raise
             except (OSError, ValueError) as err:
                 self.close()
                 raise BridgeError("connection_lost", f"The browser disconnected ({err}).") from err
-            if response.get("id") != request_id:
-                self.close()
-                raise BridgeError("protocol_error", "Response id does not match the request.")
-            if response.get("ok") is not True:
-                details = response.get("error")
-                if not isinstance(details, dict) or not isinstance(details.get("message"), str):
-                    raise BridgeError("protocol_error", "Response failure is missing error details.")
-                code = details.get("code", "error")
-                exception = BridgeTimeoutError if code == "timeout" else BridgeError
-                raise exception(code, details["message"])
-            return response.get("result")
+            self._record_response_tabs(method, parameters, result)
+            return result
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        for _, peer, _ in list(self._peers.values()):
+            peer.close()
+        self._peers.clear()
         if self._peer is not None:
             self._peer.close()
             self._peer = None
@@ -597,6 +919,7 @@ class BrowserBridge:
         "page.locate",
         "page.query",
         "page.queryAll",
+        "page.media",
         "page.waitFor",
         "page.screenshot",
         "page.network",
@@ -996,6 +1319,229 @@ class Page(_FinderScope):
     def snapshot(self, *, max_chars: int = 20_000) -> str:
         return self._call("page.snapshot", {"maxChars": max_chars})["text"]
 
+    def media(self, *, include_audio: bool = True, scroll_into_view: bool = True) -> dict[str, Any]:
+        """Discovers <video>/<audio> elements, DRM state, and ranked downloadable stream/file URLs on this tab."""
+        return self._call(
+            "page.media",
+            {"includeAudio": bool(include_audio), "scrollIntoView": bool(scroll_into_view)},
+        )
+
+    def download_media(
+        self,
+        path: str | os.PathLike[str] | None = None,
+        *,
+        url: str | None = None,
+        prefer_quality: str = "best",
+        max_bytes: int = 200 * 1024 * 1024,
+        frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Downloads a progressive video/audio file or assembles an HLS .m3u8 (fMP4 / TS) stream through this browser tab."""
+        if max_bytes < 64 * 1024 or max_bytes > 512 * 1024 * 1024:
+            raise BridgeError("bad_request", "max_bytes must be between 65536 and 536870912.")
+        if isinstance(self.browser._transport, _Transport):
+            payload: dict[str, Any] = {
+                "tabId": self.tab_id,
+                "preferQuality": prefer_quality,
+                "maxBytes": int(max_bytes),
+            }
+            if url:
+                payload["url"] = url
+            if path is not None:
+                payload["path"] = str(path)
+            if frame_id is not None:
+                payload["frameId"] = int(frame_id)
+            return self.browser.call("page.download", payload, timeout=180_000)
+
+        t0 = time.perf_counter()
+        candidates: list[tuple[str, int | None, int | None, int | None]] = []
+        page_title = ""
+        if url and url.strip():
+            candidates.append((url.strip(), frame_id, None, None))
+            page_title = self.title()
+        else:
+            rep = self.media(scroll_into_view=True)
+            page_title = rep.get("title") or ""
+            raw_cands = list(rep.get("candidates") or [])
+            if prefer_quality.lower() == "lowest" and len(raw_cands) > 1:
+                raw_cands.reverse()
+            for c in raw_cands:
+                if c.get("kind") == "dash":
+                    continue
+                cu = (c.get("url") or "").strip()
+                if cu:
+                    candidates.append((cu, c.get("frameId"), c.get("width"), c.get("height")))
+            if not candidates:
+                if rep.get("drmDetected"):
+                    raise BridgeError("drm_protected", "Media on this page uses encrypted EME/DRM (MediaKeys) and cannot be downloaded.")
+                raise BridgeError("not_found", "No downloadable video or audio stream was found on this tab.")
+
+        def _fetch_raw(target_u: str, fid: int | None, limit: int) -> tuple[str, str, bytes]:
+            req_p: dict[str, Any] = {
+                "url": target_u,
+                "method": "GET",
+                "credentials": "auto",
+                "maxBytes": max(1024, min(int(limit), 32 * 1024 * 1024)),
+                "timeoutMs": 45_000,
+                "_noLearn": True,
+            }
+            if fid and fid > 0:
+                req_p["frameId"] = int(fid)
+            res = self._call("page.fetch", req_p, timeout=55_000)
+            st = int(res.get("status") or 0)
+            if not (200 <= st < 300):
+                raise BridgeError("request_failed", f"HTTP {st} fetching {target_u}.")
+            headers_map = {str(k).lower(): str(v) for k, v in (res.get("headers") or {}).items()}
+            return str(res.get("url") or target_u), headers_map.get("content-type", ""), base64.b64decode(res["data"])
+
+        def _resolve_dest(stem_hint: str, ext: str) -> Path:
+            import re as _re
+            safe_stem = _re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", stem_hint).strip(" ._")[:72] or "video"
+            if path is not None:
+                p_obj = Path(path)
+                if p_obj.is_dir() or str(path).endswith(("/", "\\")):
+                    p_obj.mkdir(parents=True, exist_ok=True)
+                    dest = p_obj / f"{safe_stem}.{ext}"
+                    idx = 2
+                    while dest.exists():
+                        dest = p_obj / f"{safe_stem} ({idx}).{ext}"
+                        idx += 1
+                    return dest
+                p_obj.parent.mkdir(parents=True, exist_ok=True)
+                return p_obj
+            dl_dir = Path(os.environ.get("USERPROFILE") or os.path.expanduser("~")) / "Downloads"
+            dl_dir.mkdir(parents=True, exist_ok=True)
+            dest = dl_dir / f"{safe_stem}.{ext}"
+            idx = 2
+            while dest.exists():
+                dest = dl_dir / f"{safe_stem} ({idx}).{ext}"
+                idx += 1
+            return dest
+
+        last_exc: Exception | None = None
+        for cand_u, cand_fid, cand_w, cand_h in candidates:
+            budget = int(max_bytes)
+            try:
+                final_u, ct, body = _fetch_raw(cand_u, cand_fid, budget)
+            except BridgeError as exc:
+                last_exc = exc
+                continue
+
+            clean_u = final_u.split("?", 1)[0].split("#", 1)[0].lower()
+            is_m3u8 = "mpegurl" in ct.lower() or clean_u.endswith(".m3u8") or body.startswith(b"#EXTM3U")
+            if not is_m3u8:
+                ext = "webm" if ("webm" in ct.lower() or clean_u.endswith(".webm")) else ("m4a" if clean_u.endswith(".m4a") else "mp4")
+                out_file = _resolve_dest(page_title or "video", ext)
+                out_file.write_bytes(body)
+                valid_mp4 = len(body) >= 12 and body[4:8] in {b"ftyp", b"styp", b"moof"} if ext == "mp4" else None
+                return {
+                    "tabId": self.tab_id,
+                    "path": str(out_file),
+                    "bytes": len(body),
+                    "delivery": "progressive",
+                    "container": ext,
+                    "mimeType": ct or f"video/{ext}",
+                    "sourceUrl": final_u,
+                    "width": cand_w,
+                    "height": cand_h,
+                    "validMp4Header": valid_mp4,
+                    "elapsedMs": round((time.perf_counter() - t0) * 1000),
+                }
+
+            import re as _re
+            m3u8_txt = body.decode("utf-8", errors="replace")
+            if _re.search(r"#EXT-X-(?:SESSION-)?KEY:[^\n]*METHOD=(?!NONE)[A-Z0-9-]+", m3u8_txt, _re.IGNORECASE):
+                raise BridgeError("drm_protected", "HLS stream is encrypted (#EXT-X-KEY) and cannot be downloaded.")
+
+            variants: list[tuple[int, int, int | None, int | None, str]] = []
+            lines = [ln.strip() for ln in m3u8_txt.splitlines() if ln.strip()]
+            idx_l = 0
+            while idx_l < len(lines):
+                ln = lines[idx_l]
+                if ln.startswith("#EXT-X-STREAM-INF:"):
+                    bw_m = _re.search(r"BANDWIDTH=(\d+)", ln)
+                    res_m = _re.search(r"RESOLUTION=(\d+)x(\d+)", ln, _re.IGNORECASE)
+                    bw = int(bw_m.group(1)) if bw_m else 0
+                    vw = int(res_m.group(1)) if res_m else None
+                    vh = int(res_m.group(2)) if res_m else None
+                    idx_l += 1
+                    while idx_l < len(lines) and lines[idx_l].startswith("#"):
+                        idx_l += 1
+                    if idx_l < len(lines):
+                        variants.append(((vw or 0) * (vh or 0), bw, vw, vh, urllib.parse.urljoin(final_u, lines[idx_l])))
+                idx_l += 1
+
+            chosen_w, chosen_h = cand_w, cand_h
+            variant_u: str | None = None
+            if variants:
+                variants.sort(key=lambda t: (t[0], t[1]))
+                picked = variants[0] if prefer_quality.lower() == "lowest" else variants[-1]
+                _, _, chosen_w, chosen_h, variant_u = picked
+                v_final_u, _, v_body = _fetch_raw(variant_u, cand_fid, budget)
+                media_base = v_final_u
+                media_txt = v_body.decode("utf-8", errors="replace")
+            else:
+                media_base = final_u
+                media_txt = m3u8_txt
+
+            if _re.search(r"#EXT-X-(?:SESSION-)?KEY:[^\n]*METHOD=(?!NONE)[A-Z0-9-]+", media_txt, _re.IGNORECASE):
+                raise BridgeError("drm_protected", "HLS media playlist is encrypted (#EXT-X-KEY) and cannot be downloaded.")
+
+            init_map: str | None = None
+            seg_urls: list[str] = []
+            dur_s = 0.0
+            for ln in media_txt.splitlines():
+                s = ln.strip()
+                if not s:
+                    continue
+                if s.startswith("#EXT-X-MAP:"):
+                    um = _re.search(r'URI="([^"]+)"', s)
+                    if um:
+                        init_map = urllib.parse.urljoin(media_base, um.group(1))
+                elif s.startswith("#EXTINF:"):
+                    dm = _re.match(r"#EXTINF:([0-9.]+)", s)
+                    if dm:
+                        dur_s += float(dm.group(1))
+                elif not s.startswith("#"):
+                    seg_urls.append(urllib.parse.urljoin(media_base, s))
+
+            is_fmp4 = init_map is not None or (bool(seg_urls) and seg_urls[0].split("?", 1)[0].endswith(".m4s"))
+            ext = "mp4" if is_fmp4 else "ts"
+            out_file = _resolve_dest(page_title or "video", ext)
+            total_written = 0
+            with open(out_file, "wb") as fh:
+                if init_map:
+                    _, _, ib = _fetch_raw(init_map, cand_fid, budget - total_written)
+                    total_written += len(ib)
+                    fh.write(ib)
+                for su in seg_urls:
+                    if total_written >= budget:
+                        raise BridgeError("body_too_large", "Stream exceeds max_bytes limit.")
+                    _, _, sb = _fetch_raw(su, cand_fid, budget - total_written)
+                    total_written += len(sb)
+                    fh.write(sb)
+            head_bytes = out_file.read_bytes()[:16]
+            valid_mp4 = len(head_bytes) >= 12 and head_bytes[4:8] in {b"ftyp", b"styp", b"moof"} if ext == "mp4" else None
+            return {
+                "tabId": self.tab_id,
+                "path": str(out_file),
+                "bytes": total_written,
+                "delivery": "hls_fmp4" if is_fmp4 else "hls_ts",
+                "container": ext,
+                "mimeType": "video/mp4" if is_fmp4 else "video/mp2t",
+                "sourceUrl": final_u,
+                "variantUrl": variant_u,
+                "width": chosen_w,
+                "height": chosen_h,
+                "durationSeconds": round(dur_s, 2),
+                "segmentsDownloaded": len(seg_urls),
+                "validMp4Header": valid_mp4,
+                "elapsedMs": round((time.perf_counter() - t0) * 1000),
+            }
+
+        if last_exc is not None:
+            raise last_exc
+        raise BridgeError("request_failed", "Could not download media stream.")
+
     def webmcp_tools(self) -> list[dict[str, Any]]:
         """Discover WebMCP tools registered on the page (Imperative modelContext and Declarative <form toolname=...>)."""
         return self._call("page.webmcp.list")["tools"]
@@ -1105,6 +1651,7 @@ class Page(_FinderScope):
             "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
             "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
             "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
+            "media": "page.media", "page.media": "page.media",
             "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
             "fetch": "page.fetch", "page.fetch": "page.fetch",
             "navigate": "page.navigate", "history": "page.history", "dialog": "page.dialog",
@@ -1231,6 +1778,7 @@ class Page(_FinderScope):
             "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
             "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
             "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
+            "media": "page.media", "page.media": "page.media",
             "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
             "fetch": "page.fetch", "page.fetch": "page.fetch",
             "navigate": "page.navigate", "goto": "page.navigate", "history": "page.history", "dialog": "page.dialog",
@@ -1238,7 +1786,7 @@ class Page(_FinderScope):
         }
         read_safe = {
             "page.snapshot", "page.text", "page.locate", "page.query", "page.queryAll",
-            "page.waitFor", "page.screenshot", "page.fetch", "page.webmcp.list",
+            "page.media", "page.waitFor", "page.screenshot", "page.fetch", "page.webmcp.list",
         }
         all_read_safe = True
         for idx, st in enumerate(steps):
