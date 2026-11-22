@@ -64,7 +64,7 @@ jobs:
           else
             tar -czf "dist-host/browser-bridge-${{ matrix.label }}.tar.gz" -C stage .
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: host-${{ matrix.label }}
           path: |
@@ -93,7 +93,7 @@ jobs:
         run: |
           python -m pip install build
           python -m build python --outdir dist-python
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: extensions-and-python
           path: |
