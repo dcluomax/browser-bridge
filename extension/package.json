@@ -1,6 +1,6 @@
 {
   "name": "browser-bridge-extension",
-  "version": "0.12.0",
+  "version": "0.13.1",
   "private": true,
   "license": "MIT",
   "author": "dcluomax <1477354+dcluomax@users.noreply.github.com>",
@@ -18,7 +18,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test test/keys.test.ts test/locators.test.ts test/allowlist.test.ts test/media.test.ts test/page.test.mjs test/readiness.test.mjs test/tabs.test.mjs test/manifest.test.mjs test/prompt.test.ts test/i18n.test.ts",
+    "test": "node scripts/test.mjs",
     "lint:firefox": "npx --yes web-ext@10.8.0 lint --source-dir dist/firefox --self-hosted",
     "run:firefox": "npx --yes web-ext@10.8.0 run --source-dir dist/firefox",
     "sign:firefox": "npx --yes web-ext@10.8.0 sign --source-dir dist/firefox --channel unlisted --artifacts-dir dist/signed",

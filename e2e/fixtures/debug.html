@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Debug evidence fixture</title>
+    <style>
+      body { margin: 24px; font: 16px system-ui, sans-serif; }
+      #debug-target { color: rgb(20, 30, 40); padding: 8px; border: 2px solid black; }
+      #point-target { position: relative; width: 160px; height: 60px; padding: 8px; border: 2px solid black; margin: 12px; }
+      #point-cover { position: absolute; inset: 0; z-index: 2; background: #ddd; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="debug-root">
+      <h1 id="debug-target">Baseline heading</h1>
+      <p id="debug-status">Ready</p>
+      <input type="password" value="fixture-password" />
+      <input autocomplete="one-time-code" value="654321" />
+      <p class="hidden">Hidden fixture value</p>
+      <div id="point-target"><div id="point-cover">Point cover</div></div>
+      <button id="app-change" type="button">Apply app change</button>
+      <button id="request" type="button">Make fixture request</button>
+      <p id="network-result">No request</p>
+      <iframe id="frame" title="Debug frame"></iframe>
+    </main>
+    <script>
+      document.getElementById('frame').src = `${location.protocol}//localhost:${location.port}/frame.html`;
+      document.getElementById('app-change').addEventListener('click', () => {
+        document.getElementById('debug-target').style.color = 'rgb(11, 22, 33)';
+        document.getElementById('debug-status').textContent = 'App changed the color';
+      });
+      document.getElementById('request').addEventListener('click', async () => {
+        try {
+          const response = await fetch('/debug-api?q=fixture-private-value', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-fixture-private': 'fixture-private-value' },
+            body: JSON.stringify({ probe: 'fixture-private-value' }),
+          });
+          const body = await response.json();
+          document.getElementById('network-result').textContent = `${response.status}: ${body.message}`;
+        } catch (error) {
+          document.getElementById('network-result').textContent = `Request failed: ${error.message}`;
+        }
+      });
+    </script>
+  </body>
+</html>

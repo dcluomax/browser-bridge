@@ -1,180 +1,154 @@
 <#
 .SYNOPSIS
-  Builds and installs the Browser Bridge Rust native host / MCP server and browser extensions
-  for the current Windows user in one command.
-
+  Installs a verified Browser Bridge package, or builds and installs one from this checkout.
 .DESCRIPTION
-  1. Builds the extension for Chromium (Edge/Chrome/Brave) and Firefox into extension\dist.
-  2. Compiles the standalone Rust release binary (BrowserBridge.exe).
-  3. Installs BrowserBridge.exe to %LOCALAPPDATA%\BrowserBridge\app and registers native messaging
-     hosts under HKCU for Edge, Chrome, Chromium, and Firefox.
-  4. Copies unpacked extensions to %LOCALAPPDATA%\BrowserBridge\extension so repository rebuilds
-     never disrupt active browser profiles.
-  5. Optionally registers the MCP server for GitHub Copilot, Claude Desktop, and/or Cursor,
-     and optionally installs the zero-dependency Python SDK.
-
-.EXAMPLE
-  .\scripts\install.ps1 -RegisterCopilotMcp
-
-.EXAMPLE
-  .\scripts\install.ps1 -RegisterAllMcp -InstallPythonSdk
+  -PrebuiltPackage needs Python 3.11+ and does not need Node, npm, Rust, or Visual Studio.
+  Browser and MCP targets are explicit. -FirefoxDevLauncher creates a dedicated-profile
+  launcher without starting Firefox. No application is stopped, no profile is copied, and
+  Firefox signing stays enabled.
 #>
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
+    [Alias('HostOnly')][switch]$SkipDesktop,
+    [Alias('PackagePath')][string]$PrebuiltPackage,
+    [string]$Descriptor,
+    [string]$PackageSha256,
+    [string]$ExpectedVersion,
+    [string]$InstallRoot,
+    [string]$OutputDirectory,
+    [ValidateSet('edge', 'chrome', 'chromium', 'firefox')][string[]]$Browsers = @('edge', 'chrome', 'chromium', 'firefox'),
+    [ValidateSet('copilot', 'codex', 'claude')][string[]]$Agents = @(),
     [switch]$RegisterCopilotMcp,
+    [switch]$RegisterCodexMcp,
     [switch]$RegisterClaudeMcp,
-    [switch]$RegisterCursorMcp,
     [switch]$RegisterAllMcp,
     [switch]$InstallPythonSdk,
     [switch]$ReadOnlyMcp,
+    [switch]$ReadWriteMcp,
     [switch]$AllowEvaluate,
-    [switch]$SkipExtensionBuild
+    [switch]$DenyEvaluate,
+    [string]$CopilotConfig,
+    [string]$CodexConfig,
+    [string]$ClaudeConfig,
+    [switch]$SkipExtensionBuild,
+    [string]$FirefoxXpi,
+    [switch]$FirefoxDevLauncher,
+    [string]$FirefoxExe,
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
+$null = $SkipDesktop
 $repo = Split-Path -Parent $PSScriptRoot
-$extension = Join-Path $repo 'extension'
-$rustDir = Join-Path $repo 'rust'
-$appDir = Join-Path $env:LOCALAPPDATA 'BrowserBridge\app'
-$config = Get-Content (Join-Path $extension 'bridge.config.json') -Raw | ConvertFrom-Json
+$engine = Join-Path $PSScriptRoot 'distribution.py'
+if ($ReadOnlyMcp -and $ReadWriteMcp) { throw 'Select either -ReadOnlyMcp or -ReadWriteMcp.' }
+if ($AllowEvaluate -and $DenyEvaluate) { throw 'Select either -AllowEvaluate or -DenyEvaluate.' }
+if ($ValidateOnly -and -not $PrebuiltPackage) { throw '-ValidateOnly requires -PrebuiltPackage.' }
+if ($PrebuiltPackage -and $FirefoxXpi) { throw 'A prebuilt package cannot be modified with -FirefoxXpi.' }
+
+$pythonCommand = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $pythonCommand) { throw 'Python 3.11+ is required. Offline installation does not require Rust or Node.' }
+$python = $pythonCommand.Source
+
+function Invoke-Checked {
+    param([string]$File, [string[]]$ArgumentList, [string]$Label)
+    & $File @ArgumentList | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "$Label failed (exit $LASTEXITCODE). Nothing was force-stopped." }
+}
+
+Invoke-Checked $python @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)') 'Python 3.11+ check'
+if (-not $InstallRoot) {
+    if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is required, or pass -InstallRoot.' }
+    $InstallRoot = Join-Path $env:LOCALAPPDATA 'BrowserBridge'
+}
 
 if ($RegisterAllMcp) {
     $RegisterCopilotMcp = $true
+    $RegisterCodexMcp = $true
     $RegisterClaudeMcp = $true
-    $RegisterCursorMcp = $true
 }
+if ($RegisterCopilotMcp) { $Agents += 'copilot' }
+if ($RegisterCodexMcp) { $Agents += 'codex' }
+if ($RegisterClaudeMcp) { $Agents += 'claude' }
+$Agents = @($Agents | Select-Object -Unique)
 
-if (-not $SkipExtensionBuild) {
-    Push-Location $extension
-    try {
-        if (-not (Test-Path 'node_modules')) { npm ci --no-fund --no-audit | Out-Host }
-        node build.mjs | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw 'Extension build failed.' }
-    } finally { Pop-Location }
-}
-
-$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-$vcvarsName = if ($arch -eq 'Arm64') { 'vcvarsarm64.bat' } else { 'vcvars64.bat' }
-$vcvars = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Auxiliary\Build\$vcvarsName" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-if ($vcvars) {
-    & $env:ComSpec /c "call `"$vcvars`" >nul && cd /d `"$rustDir`" && cargo build --release -p browser-bridge" | Out-Host
-} else {
-    Push-Location $rustDir
-    try { cargo build --release -p browser-bridge | Out-Host } finally { Pop-Location }
-}
-if ($LASTEXITCODE -ne 0) { throw 'Rust release build failed.' }
-
-$hostBin = Join-Path $rustDir 'target\release\BrowserBridge.exe'
-
-# Hot-swap binary on Windows NTFS without killing active browser native-host / MCP pipes:
-# Windows allows renaming a running .exe while keeping its open image & named pipes alive!
-New-Item -ItemType Directory -Path $appDir -Force | Out-Null
-$destExe = Join-Path $appDir 'BrowserBridge.exe'
-Get-ChildItem -Path $appDir -Filter 'BrowserBridge.exe.old*' -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
-
-$swappedWithoutKill = $false
-if (Test-Path -LiteralPath $destExe) {
-    $retiredExe = Join-Path $appDir ("BrowserBridge.exe.old.{0}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
-    try {
-        Move-Item -LiteralPath $destExe -Destination $retiredExe -Force -ErrorAction Stop
-        Copy-Item -LiteralPath $hostBin -Destination $destExe -Force -ErrorAction Stop
-        Remove-Item -LiteralPath $retiredExe -Force -ErrorAction SilentlyContinue
-        $swappedWithoutKill = $true
-        Write-Host "Hot-swapped BrowserBridge.exe without disconnecting active browser sessions"
-    } catch {
-        if ((-not (Test-Path -LiteralPath $destExe)) -and (Test-Path $retiredExe)) {
-            Move-Item -LiteralPath $retiredExe -Destination $destExe -Force -ErrorAction SilentlyContinue
-        }
-    }
-} else {
-    Copy-Item -LiteralPath $hostBin -Destination $destExe -Force
-    $swappedWithoutKill = $true
-}
-
-if (-not $swappedWithoutKill) {
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        $running = Get-CimInstance Win32_Process -Filter "Name = 'BrowserBridge.exe'" |
-            Where-Object { $_.ExecutablePath -eq $destExe }
-        foreach ($process in $running) {
-            $live = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
-            if ($live) {
-                Write-Host "Stopping running host process $($process.ProcessId)"
-                Stop-Process -Id $process.ProcessId -Force
-                if (-not $live.WaitForExit(5000)) { throw "Host process $($process.ProcessId) did not exit." }
-            }
-        }
+if (-not $PrebuiltPackage) {
+    if (-not $PSCmdlet.ShouldProcess($repo, 'Build a Browser Bridge package')) { return }
+    $extension = Join-Path $repo 'extension'
+    $rust = Join-Path $repo 'rust'
+    if (-not $SkipExtensionBuild) {
+        Push-Location $extension
         try {
-            Copy-Item -LiteralPath $hostBin -Destination $destExe -Force
-            break
-        } catch [System.IO.IOException], [System.UnauthorizedAccessException] {
-            if ($attempt -eq 3) { throw }
-            Write-Warning "A host reconnected while files were copied; retrying installation ($attempt/3)."
-            Start-Sleep -Milliseconds 100
+            if (-not (Test-Path 'node_modules')) { npm ci --no-fund --no-audit | Out-Host }
+            Invoke-Checked 'node' @('build.mjs', '--zip') 'Extension build (restore missing dependencies with npm ci, then retry)'
+        } finally { Pop-Location }
+    }
+    $cargoCommand = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $cargo = if ($cargoCommand) { $cargoCommand.Source } else {
+        Join-Path $HOME '.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe'
+    }
+    if (-not (Test-Path -LiteralPath $cargo -PathType Leaf)) {
+        throw 'A Rust toolchain is required for source builds. Use -PrebuiltPackage for offline installation.'
+    }
+    $toolBin = Split-Path -Parent $cargo
+    $rustc = Join-Path $toolBin 'rustc.exe'
+    if (-not (Test-Path -LiteralPath $rustc)) { throw "Cannot find rustc beside cargo: $toolBin" }
+    $hostLines = & $rustc -vV
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the Rust compiler host target.' }
+    $rustHost = @($hostLines | Where-Object { $_ -match '^host: ' })[0] -replace '^host: ', ''
+    $architecture = if ($rustHost -eq 'aarch64-pc-windows-msvc') { 'aarch64' } elseif ($rustHost -eq 'x86_64-pc-windows-msvc') { 'x86_64' } else {
+        throw "Unsupported Windows source build target: $rustHost"
+    }
+    $vcName = if ($architecture -eq 'aarch64') { 'vcvarsarm64.bat' } else { 'vcvars64.bat' }
+    $vcvars = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Auxiliary\Build\$vcName" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+    if (-not $vcvars) {
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path -LiteralPath $vswhere) {
+            $vsRoot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed.' }
+            if ($vsRoot) { $vcvars = Join-Path $vsRoot "VC\Auxiliary\Build\$vcName" }
         }
     }
-}
-
-$exe = Join-Path $appDir 'BrowserBridge.exe'
-& $exe install --chromium-id $config.chromiumExtensionId --gecko-id $config.geckoId --host-path $exe | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Native host registration failed.' }
-
-# Browsers load the extension from a stable copy so rebuilding the repository never breaks them.
-$extensionHome = Join-Path $env:LOCALAPPDATA 'BrowserBridge\extension'
-foreach ($target in 'chromium', 'firefox') {
-    robocopy (Join-Path $extension "dist\$target") (Join-Path $extensionHome $target) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "Copying the $target extension failed (robocopy $LASTEXITCODE)." }
-}
-$global:LASTEXITCODE = 0
-
-function Register-McpJsonConfig {
-    param(
-        [Parameter(Mandatory)][string]$ConfigPath,
-        [Parameter(Mandatory)][pscustomobject]$ServerEntry,
-        [Parameter(Mandatory)][string]$ClientLabel
-    )
-    $parent = Split-Path -Parent $ConfigPath
-    if ($parent -and -not (Test-Path $parent)) {
-        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    if (-not $vcvars -or -not (Test-Path -LiteralPath $vcvars)) { throw 'Visual Studio C++ Build Tools are required, or use -PrebuiltPackage.' }
+    foreach ($path in @($rust, $cargo, $toolBin, $vcvars)) {
+        if ($path -match '["%&|<>^!\r\n]') { throw 'This source-build path cannot be safely passed to cmd.exe. Use a prebuilt package.' }
     }
-    $doc = if (Test-Path $ConfigPath) { Get-Content $ConfigPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{ mcpServers = [pscustomobject]@{} } }
-    if (-not $doc.mcpServers) { $doc | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) }
-    $doc.mcpServers | Add-Member -NotePropertyName 'browser-bridge' -NotePropertyValue $ServerEntry -Force
-    ($doc | ConvertTo-Json -Depth 10) | Set-Content $ConfigPath -Encoding utf8
-    Write-Host "Registered MCP server 'browser-bridge' for $ClientLabel in $ConfigPath"
+    $buildCommand = "call `"$vcvars`" >nul && set `"PATH=$toolBin;%PATH%`" && cd /d `"$rust`" && `"$cargo`" build --locked --release -p browser-bridge"
+    Invoke-Checked $env:ComSpec @('/d', '/s', '/c', $buildCommand) 'Rust release build'
+    if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'dist' }
+    $packageArgs = @($engine, 'pack', '--root', $repo, '--target', "windows-$architecture",
+        '--native-binary', (Join-Path $rust 'target\release\BrowserBridge.exe'), '--output', $OutputDirectory)
+    if ($FirefoxXpi) { $packageArgs += @('--firefox-xpi', $FirefoxXpi) }
+    Invoke-Checked $python $packageArgs 'Package verification'
+    $version = (Get-Content -LiteralPath (Join-Path $extension 'package.json') -Raw | ConvertFrom-Json).version
+    $PrebuiltPackage = Join-Path $OutputDirectory "browser-bridge-$version-windows-$architecture.zip"
 }
 
-$mcpArgs = @('mcp')
-if ($ReadOnlyMcp) { $mcpArgs += '--read-only' }
-if ($AllowEvaluate) { $mcpArgs += '--allow-evaluate' }
+$verifyArgs = @($engine, 'verify', '--package', $PrebuiltPackage)
+if ($Descriptor) { $verifyArgs += @('--descriptor', $Descriptor) }
+if ($PackageSha256) { $verifyArgs += @('--sha256', $PackageSha256) }
+if ($ExpectedVersion) { $verifyArgs += @('--version', $ExpectedVersion) }
+Invoke-Checked $python $verifyArgs 'Offline package validation'
+if ($ValidateOnly -or -not $PSCmdlet.ShouldProcess($InstallRoot, 'Install verified host/extensions and selected MCP/native targets')) { return }
 
-if ($RegisterCopilotMcp) {
-    $copilotEntry = [pscustomobject]@{ type = 'local'; command = $exe; args = $mcpArgs; tools = @('*') }
-    Register-McpJsonConfig -ConfigPath (Join-Path $HOME '.copilot\mcp-config.json') -ServerEntry $copilotEntry -ClientLabel 'GitHub Copilot'
-}
-
-if ($RegisterClaudeMcp) {
-    $claudeEntry = [pscustomobject]@{ command = $exe; args = $mcpArgs }
-    Register-McpJsonConfig -ConfigPath (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json') -ServerEntry $claudeEntry -ClientLabel 'Claude Desktop'
-}
-
-if ($RegisterCursorMcp) {
-    $cursorEntry = [pscustomobject]@{ command = $exe; args = $mcpArgs }
-    Register-McpJsonConfig -ConfigPath (Join-Path $HOME '.cursor\mcp.json') -ServerEntry $cursorEntry -ClientLabel 'Cursor'
-}
+$installArgs = @($engine, 'install', '--package', $PrebuiltPackage, '--install-root', $InstallRoot)
+if ($Descriptor) { $installArgs += @('--descriptor', $Descriptor) }
+if ($PackageSha256) { $installArgs += @('--sha256', $PackageSha256) }
+if ($ExpectedVersion) { $installArgs += @('--version', $ExpectedVersion) }
+foreach ($browser in $Browsers) { $installArgs += @('--browser', $browser) }
+foreach ($agent in $Agents) { $installArgs += @('--agent', $agent) }
+if ($CopilotConfig) { $installArgs += @('--copilot-config', $CopilotConfig) }
+if ($CodexConfig) { $installArgs += @('--codex-config', $CodexConfig) }
+if ($ClaudeConfig) { $installArgs += @('--claude-config', $ClaudeConfig) }
+if ($ReadOnlyMcp) { $installArgs += '--read-only' }
+if ($ReadWriteMcp) { $installArgs += '--read-write' }
+if ($AllowEvaluate) { $installArgs += '--allow-evaluate' }
+if ($DenyEvaluate) { $installArgs += '--deny-evaluate' }
+if ($FirefoxDevLauncher) { $installArgs += '--firefox-dev-launcher' }
+if ($FirefoxExe) { $installArgs += @('--firefox-exe', $FirefoxExe) }
+Invoke-Checked $python $installArgs 'Transactional Browser Bridge installation'
 
 if ($InstallPythonSdk) {
-    python -m pip install (Join-Path $repo 'python') | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'Python SDK installation failed.' }
+    Invoke-Checked $python @('-m', 'pip', 'install', (Join-Path $repo 'python')) 'Python SDK installation'
 }
-
-Write-Host ''
-Write-Host 'Browser Bridge installed successfully!' -ForegroundColor Green
-Write-Host 'Load the extension once per browser profile (afterwards click Reload on the extension card after updates):'
-Write-Host "  Edge:    edge://extensions   -> Developer mode -> Load unpacked -> $extensionHome\chromium"
-Write-Host "  Chrome:  chrome://extensions -> Developer mode -> Load unpacked -> $extensionHome\chromium"
-Write-Host "  Firefox: about:debugging#/runtime/this-firefox -> Load Temporary Add-on -> $extensionHome\firefox\manifest.json"
-Write-Host "           (permanent install needs a signed XPI: npm --prefix extension run sign:firefox)"
-Write-Host "Expected Chromium extension id: $($config.chromiumExtensionId)"
-Write-Host "Native host & MCP server:       $exe"
-Write-Host "Verify connection status with:  `"$exe`" status"
+Write-Host 'No browser or agent was restarted. See docs\INSTALLATION.md for extension reload or Firefox activation.'

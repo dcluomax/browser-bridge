@@ -1,5 +1,6 @@
 import { api } from '../shared/api.ts';
 import { NATIVE_HOST_NAME, type ExtensionToHost, type HelloMessage, type HostToExtension } from '../shared/protocol.ts';
+import { versionMismatchWarning } from '../shared/versions.ts';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -15,6 +16,7 @@ export class NativeConnection {
   hostVersion = '';
   pipeName = '';
   agentGuide = '';
+  versionWarning = '';
   private port: chrome.runtime.Port | null = null;
   private retryMs = 1000;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -70,6 +72,8 @@ export class NativeConnection {
         this.hostVersion = message.hostVersion;
         this.pipeName = message.pipeName;
         this.agentGuide = message.agentGuide ?? '';
+        this.versionWarning = versionMismatchWarning(message.hostVersion, api.runtime.getManifest().version) ?? '';
+        if (this.versionWarning) console.warn(`[browser-bridge] ${this.versionWarning}`);
       }
       this.onMessage(message);
     });
@@ -99,6 +103,7 @@ export class NativeConnection {
     this.lastError = error;
     this.hostVersion = '';
     this.pipeName = '';
+    this.versionWarning = '';
     const delay = this.retryMs;
     this.retryMs = Math.min(this.retryMs * 2, MAX_RETRY_MS);
     console.warn(`[browser-bridge] native host connection failed: ${error}; retrying in ${delay} ms`);

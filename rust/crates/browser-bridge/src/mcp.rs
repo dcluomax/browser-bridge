@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc};
 
+#[path = "debug_tools.rs"]
+mod debug_tools;
+
 const INSTRUCTIONS: &str = "Browser Bridge controls the user's own Edge, Chrome or Firefox through an extension. \
 Read pages with browser_snapshot (element refs like e12; SVG diagram shapes appear as role=\"shape\") or browser_get_text, \
 then act with browser_click, browser_drag, browser_type, browser_fill_form, browser_select_option, browser_press_key, or browser_batch (to execute multi-step sequences such as repeated combobox searches/clicks in 1 fast call without extra LLM roundtrips). \
@@ -222,6 +225,14 @@ const READ_SAFE_MCP_TOOLS: &[&str] = &[
     "browser_routine_list",
     "browser_routine_run",
     "browser_batch",
+    "browser_styles",
+    "browser_layout",
+    "browser_dom_baseline",
+    "browser_patch",
+    "browser_performance",
+    "browser_har",
+    "browser_debugger",
+    "browser_intercept",
 ];
 
 fn tool_definitions(opts: McpOptions) -> Vec<Value> {
@@ -825,6 +836,8 @@ fn tool_definitions(opts: McpOptions) -> Vec<Value> {
         }),
     ];
 
+    tools.extend(debug_tools::definitions(&loc, opts.read_only));
+
     if opts.allow_evaluate && !opts.read_only {
         tools.push(json!({
             "name": "browser_evaluate",
@@ -1259,6 +1272,25 @@ async fn call_tool(
         ));
     }
     let browser = args.get("browser").and_then(Value::as_str);
+    if let Some(method) = debug_tools::method(name) {
+        if opts.read_only && !debug_tools::read_safe(name, args) {
+            return text_err(format!("{name} action is disabled in read-only mode. [read_only]"));
+        }
+        let Some(mut params) = args.as_object().cloned() else {
+            return text_err("Diagnostic arguments must be an object. [bad_request]");
+        };
+        params.remove("browser");
+        if opts.read_only {
+            params.insert("readOnly".into(), json!(true));
+        }
+        return match tracked_send(client, tracker, method, Value::Object(params), browser, DEFAULT_TIMEOUT).await {
+            Ok((result, _)) => json!({
+                "content": [{ "type": "text", "text": result.to_string() }],
+                "structuredContent": result
+            }),
+            Err(err) => fail(err),
+        };
+    }
     match name {
         "browser_status" => {
             let all = client.connect_all().await;
@@ -1276,6 +1308,16 @@ async fn call_tool(
             }
             lines.push(String::new());
             lines.push(format!("Selected: {}", conn.describe()));
+            if let Some(extension_version) = conn.info.get("extensionVersion").and_then(Value::as_str) {
+                if extension_version.rsplit_once('.').map(|(line, _)| line)
+                    != bridge_core::VERSION.rsplit_once('.').map(|(line, _)| line)
+                {
+                    lines.push(format!(
+                        "Version warning: native {} and extension {extension_version} use different release lines. Update the native host and reload the extension.",
+                        bridge_core::VERSION
+                    ));
+                }
+            }
             let cur = res.get("currentTabId").filter(|v| !v.is_null()).map(|v| v.to_string()).unwrap_or_else(|| "none".into());
             lines.push(format!("Tabs this agent may use: {}; current tab: {cur}", val_str(res.get("accessibleTabs"))));
             lines.push(format!(

@@ -6,8 +6,11 @@
  */
 import { parseKeyCombo, producesText, type KeyPress } from '../shared/keys.ts';
 import { parseLocator, type ElementSummary, type LocatedElements, type Locator, type LocatorStep } from '../shared/locators.ts';
+import { createDiagnosticsApi } from './diagnostics.ts';
+import { createPatchApi, type PatchChange } from './patches.ts';
+import { readPerformanceEvidence, type PerformanceOptions } from './performance.ts';
 
-const CONTENT_VERSION = '0.12.0';
+const CONTENT_VERSION = '0.13.0';
 
 interface SnapshotOptions {
   maxChars?: number;
@@ -2673,8 +2676,80 @@ function startDemoRecorder(options: {
   return { started: true };
 }
 
+interface DebugTarget {
+  ref?: string;
+  locator?: Locator;
+}
+
+function resolveDebugTarget(target?: DebugTarget): Element {
+  if (target?.ref && target.locator) throw new Error('Provide ref or locator, not both.');
+  if (target?.ref) return resolve(target.ref);
+  if (target?.locator) {
+    const matches = findElements(target.locator);
+    if (matches.length !== 1) throw new Error(`Strict locator matched ${matches.length} elements. Refine the target.`);
+    return matches[0];
+  }
+  const root = document.body ?? document.documentElement;
+  if (!root) throw new Error('The document has no readable root element.');
+  return root;
+}
+
+let debugDocumentId: string | undefined;
+function currentDebugDocumentId(): string {
+  if (!debugDocumentId) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    debugDocumentId = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return debugDocumentId;
+}
+let diagnosticsApi: ReturnType<typeof createDiagnosticsApi> | undefined;
+let patchesApi: ReturnType<typeof createPatchApi> | undefined;
+const diagnosticHelpers = { resolveTarget: resolveDebugTarget, refFor, summarize: summarizeElement, isVisible };
+const diagnostics = () => diagnosticsApi ??= createDiagnosticsApi(diagnosticHelpers);
+const patches = () => patchesApi ??= createPatchApi(diagnosticHelpers);
+
+function withDocument<T extends object>(result: T): T & { documentId: string } {
+  return { ...result, documentId: currentDebugDocumentId() };
+}
+
+function releaseDebugOwner(owner: string, documentId?: string) {
+  if (documentId !== undefined && documentId !== debugDocumentId) return { discardedDocument: true };
+  return {
+    baselines: diagnosticsApi?.releaseOwner(owner) ?? null,
+    patches: patchesApi?.releaseOwner(owner) ?? null,
+  };
+}
+
+function disposeDebug(): void {
+  diagnosticsApi?.dispose();
+  const cleanup = patchesApi?.dispose();
+  if (cleanup?.errors.length) console.error(`Browser Bridge could not roll back ${cleanup.errors.length} patch(es) during document cleanup.`);
+  diagnosticsApi = undefined;
+  patchesApi = undefined;
+  window.removeEventListener('pagehide', disposeDebug);
+}
+
 const bb = {
   version: CONTENT_VERSION,
+  debugStyles: (target: DebugTarget | undefined, options: { properties?: string[]; pseudo?: string }) =>
+    withDocument(diagnostics().computedStyles(target, options)),
+  debugStyleContext: (target?: DebugTarget) => withDocument(diagnostics().styleContext(target)),
+  debugBoxModel: (target?: DebugTarget) => withDocument(diagnostics().boxModel(target)),
+  debugHitTest: (point: { x: number; y: number }) => withDocument(diagnostics().hitTest(point)),
+  debugBaselineCreate: (owner: string, options: { target?: DebugTarget; maxNodes?: number; maxText?: number }) =>
+    withDocument(diagnostics().baselineCreate(owner, options)),
+  debugBaselineCompare: (owner: string, id: string, options: { maxChanges?: number }) =>
+    withDocument(diagnostics().baselineCompare(owner, id, options)),
+  debugBaselineDescribe: (owner: string, id: string) => withDocument(diagnostics().baselineDescribe(owner, id)),
+  debugBaselineRelease: (owner: string, id: string) => withDocument(diagnostics().baselineRelease(owner, id)),
+  debugPatchApply: (owner: string, changes: PatchChange[], options: { ttlMs?: number; label?: string }) =>
+    withDocument(patches().apply(owner, changes, options)),
+  debugPatchList: (owner: string) => withDocument({ patches: patches().list(owner) }),
+  debugPatchRollback: (owner: string, id?: string) => withDocument(patches().rollback(owner, id)),
+  debugPatchCommit: (owner: string, id: string) => withDocument(patches().commit(owner, id)),
+  debugPerformance: (options: PerformanceOptions) => withDocument(readPerformanceEvidence(options)),
+  releaseDebugOwner,
+  disposeDebug,
   snapshot,
   getText,
   point: (ref: string) => pointFor(resolve(ref)),
@@ -2751,8 +2826,9 @@ export function readNavigationTiming(): {
 
 export type ContentApi = typeof bb;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const globalScope = globalThis as any;
+const globalScope = globalThis as typeof globalThis & { __bb?: ContentApi };
 if (!globalScope.__bb || globalScope.__bb.version !== CONTENT_VERSION) {
+  if (typeof globalScope.__bb?.disposeDebug === 'function') globalScope.__bb.disposeDebug();
   globalScope.__bb = bb;
+  window.addEventListener('pagehide', disposeDebug, { once: true });
 }

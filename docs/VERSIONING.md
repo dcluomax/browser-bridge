@@ -5,8 +5,8 @@ Browser Bridge follows **Semantic Versioning (`MAJOR.MINOR.PATCH`)** with an exp
 | Version Segment | Example | When to Increment |
 | --- | --- | --- |
 | **1st — `MAJOR` (`X.0.0`)** | `1.0.0` | Incompatible changes to the Native Messaging wire protocol, Named Pipe / Unix Socket IPC frame format, or core MCP tool contracts. |
-| **2nd — `MINOR` (`0.Y.0`)** | `0.12.0` | New core engine capabilities (e.g. `browser_media` / `browser_download` HLS fMP4 video building blocks, zero-collision O(1) multi-browser `tabId` routing & cloned-profile self-healing, Auto-Routine distillation, `browser_batch`), new MCP tools/resources/prompts, new browser extension permissions, or new SDK APIs. |
-| **3rd — `PATCH` (`0.11.Z`)** | `0.11.1` | **Adding or updating website optimization JSON playbooks (`routines/*.json`)**, refreshing selectors/routines after website DOM redesigns, site-specific speed tuning, bug fixes, and documentation updates. |
+| **2nd — `MINOR` (`0.Y.0`)** | `0.13.0` | New core engine capabilities (e.g. structured CSS/layout/DOM-baseline diagnostics & reversible `browser_patch`, verified transactional packaging, `browser_media` / `browser_download` HLS fMP4 building blocks, zero-collision O(1) multi-browser routing), new MCP tools/resources/prompts, new browser extension permissions, or new SDK APIs. |
+| **3rd — `PATCH` (`0.13.Z`)** | `0.13.1` | **Adding or updating website optimization JSON playbooks (`routines/*.json`)**, refreshing selectors/routines after website DOM redesigns, site-specific speed tuning, non-breaking installer/bug fixes, and documentation updates. |
 
 ## Rules for Updating Website Optimization JSONs (`routines/*.json`)
 

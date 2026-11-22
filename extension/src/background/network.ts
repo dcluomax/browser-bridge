@@ -1,5 +1,7 @@
 import { api, isChromium } from '../shared/api.ts';
 import { redactBodyText, redactHeaders, redactUrl } from './allowlist.ts';
+import { evidenceUrl } from '../content/performance.ts';
+import { BridgeError } from '../shared/protocol.ts';
 
 export interface NetworkExchange {
   requestId: string;
@@ -19,6 +21,8 @@ export interface NetworkExchange {
 interface TabCapture {
   active: boolean;
   startedAt: number;
+  owner?: string;
+  droppedEntries: number;
   maxEntries: number;
   urlSubstring?: string;
   entries: Map<string, NetworkExchange>;
@@ -26,7 +30,7 @@ interface TabCapture {
 }
 
 interface RawRequestBody {
-  formData?: Record<string, string[]>;
+  formData?: Record<string, Array<string | ArrayBuffer>>;
   raw?: Array<{ bytes?: ArrayBuffer }>;
 }
 
@@ -53,6 +57,7 @@ function decodeRequestBody(body: RawRequestBody | undefined): string | undefined
     for (const [key, vals] of Object.entries(body.formData)) {
       for (const v of vals ?? []) {
         if (typeof v === 'string') params.append(key, v);
+        else params.append(key, `[binary ${v.byteLength} bytes]`);
       }
     }
     return redactBodyText(params.toString());
@@ -78,6 +83,7 @@ function ensureEntry(cap: TabCapture, details: { requestId: string; method?: str
   while (cap.order.length >= cap.maxEntries) {
     const oldest = cap.order.shift();
     if (oldest) cap.entries.delete(oldest);
+    cap.droppedEntries++;
   }
   existing = {
     requestId: details.requestId,
@@ -96,10 +102,10 @@ function ensureEntry(cap: TabCapture, details: { requestId: string; method?: str
 
 function installListenersOnce(): void {
   if (listenersInstalled) return;
-  listenersInstalled = true;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wr = api.webRequest as any;
-  if (!wr) return;
+  const wr = api.webRequest;
+  if (!wr?.onBeforeRequest || !wr.onCompleted || !wr.onErrorOccurred) {
+    throw new BridgeError('unsupported', 'This browser does not provide the required network observation APIs.');
+  }
   const filter = { urls: ['<all_urls>'] };
 
   try {
@@ -117,7 +123,8 @@ function installListenersOnce(): void {
       filter,
       ['requestBody'],
     );
-  } catch {
+  } catch (error) {
+    console.warn('Browser Bridge request body observation is unavailable; capturing metadata only:', error instanceof Error ? error.message : String(error));
     wr.onBeforeRequest?.addListener(
       (details: RawWebRequestDetails) => {
         const cap = captures.get(details.tabId);
@@ -129,7 +136,7 @@ function installListenersOnce(): void {
     );
   }
 
-  const reqHeaderOpts = isChromium ? ['requestHeaders', 'extraHeaders'] : ['requestHeaders'];
+  const reqHeaderOpts: Array<'requestHeaders' | 'extraHeaders'> = isChromium ? ['requestHeaders', 'extraHeaders'] : ['requestHeaders'];
   try {
     wr.onSendHeaders?.addListener(
       (details: RawWebRequestDetails) => {
@@ -143,7 +150,8 @@ function installListenersOnce(): void {
       filter,
       reqHeaderOpts,
     );
-  } catch {
+  } catch (error) {
+    console.warn('Browser Bridge extended request header observation is unavailable:', error instanceof Error ? error.message : String(error));
     try {
       wr.onSendHeaders?.addListener(
         (details: RawWebRequestDetails) => {
@@ -157,12 +165,12 @@ function installListenersOnce(): void {
         filter,
         ['requestHeaders'],
       );
-    } catch {
-      // ignore unavailable listener in mock environments
+    } catch (headerError) {
+      console.warn('Browser Bridge request headers could not be observed:', headerError instanceof Error ? headerError.message : String(headerError));
     }
   }
 
-  const respHeaderOpts = isChromium ? ['responseHeaders', 'extraHeaders'] : ['responseHeaders'];
+  const respHeaderOpts: Array<'responseHeaders' | 'extraHeaders'> = isChromium ? ['responseHeaders', 'extraHeaders'] : ['responseHeaders'];
   const onResp = (details: RawWebRequestDetails) => {
     const cap = captures.get(details.tabId);
     if (!cap?.active) return undefined;
@@ -180,10 +188,12 @@ function installListenersOnce(): void {
   };
   try {
     wr.onCompleted?.addListener(onResp, filter, respHeaderOpts);
-  } catch {
+  } catch (error) {
+    console.warn('Browser Bridge extended response header observation is unavailable:', error instanceof Error ? error.message : String(error));
     try {
       wr.onCompleted?.addListener(onResp, filter, ['responseHeaders']);
-    } catch {
+    } catch (headerError) {
+      console.warn('Browser Bridge response headers could not be observed:', headerError instanceof Error ? headerError.message : String(headerError));
       wr.onHeadersReceived?.addListener(onResp, filter);
     }
   }
@@ -198,17 +208,24 @@ function installListenersOnce(): void {
       entry.durationMs = Math.max(0, Date.now() - entry.startedAt);
     }
   }, filter);
+  listenersInstalled = true;
 }
 
 export function startNetworkCapture(
   tabId: number,
-  options: { maxEntries?: number; urlInclude?: string; clear?: boolean } = {},
+  options: { maxEntries?: number; urlInclude?: string; clear?: boolean; owner?: string } = {},
 ): { active: boolean; captured: number } {
   installListenersOnce();
-  const maxEntries = Math.max(10, Math.min(Math.round(options.maxEntries ?? 200), 500));
+  const maxEntries = options.maxEntries ?? 200;
+  if (!Number.isInteger(maxEntries) || maxEntries < 1 || maxEntries > 500) {
+    throw new BridgeError('bad_request', 'maxEntries must be an integer from 1 to 500.');
+  }
   const urlSubstring = options.urlInclude?.trim().toLowerCase() || undefined;
   const existing = captures.get(tabId);
   if (existing && options.clear === false) {
+    if (existing.owner !== options.owner) {
+      throw new BridgeError('forbidden', 'The network capture belongs to another session. Start a new capture.');
+    }
     existing.active = true;
     existing.maxEntries = maxEntries;
     existing.urlSubstring = urlSubstring;
@@ -217,6 +234,8 @@ export function startNetworkCapture(
   captures.set(tabId, {
     active: true,
     startedAt: Date.now(),
+    owner: options.owner,
+    droppedEntries: 0,
     maxEntries,
     urlSubstring,
     entries: new Map(),
@@ -227,11 +246,14 @@ export function startNetworkCapture(
 
 export function readNetworkCapture(
   tabId: number,
-  options: { stop?: boolean; clear?: boolean; onlyFailures?: boolean; limit?: number } = {},
+  options: { stop?: boolean; clear?: boolean; onlyFailures?: boolean; limit?: number; owner?: string } = {},
 ): { active: boolean; totalCaptured: number; exchanges: NetworkExchange[] } {
   const cap = captures.get(tabId);
   if (!cap) {
     return { active: false, totalCaptured: 0, exchanges: [] };
+  }
+  if (options.owner !== undefined && cap.owner !== options.owner) {
+    throw new BridgeError('forbidden', 'The network capture belongs to another session. Start a new capture.');
   }
   if (options.stop) cap.active = false;
   const limit = Math.max(1, Math.min(Math.round(options.limit ?? 100), 500));
@@ -252,4 +274,72 @@ export function readNetworkCapture(
 
 export function dropTabNetworkCapture(tabId: number): void {
   captures.delete(tabId);
+}
+
+export function dropOwnerNetworkCaptures(owner: string): void {
+  for (const [tabId, capture] of captures) {
+    if (capture.owner === owner) captures.delete(tabId);
+  }
+}
+
+export function exportNetworkHar(tabId: number, owner: string, options: { limit?: number; onlyFailures?: boolean } = {}) {
+  const capture = captures.get(tabId);
+  if (!capture) throw new BridgeError('capture_required', 'Start browser_network capture, reproduce the issue, then export HAR. Export does not start capture.');
+  if (capture.owner !== owner) throw new BridgeError('forbidden', 'The network capture belongs to another session.');
+  const limit = options.limit ?? 200;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new BridgeError('bad_request', 'HAR limit must be an integer from 1 to 500.');
+  }
+  const selected = readNetworkCapture(tabId, { limit, onlyFailures: options.onlyFailures });
+  const entries = selected.exchanges.map((exchange) => ({
+    startedDateTime: new Date(exchange.startedAt).toISOString(),
+    time: exchange.durationMs ?? 0,
+    request: {
+      method: exchange.method,
+      url: evidenceUrl(exchange.url),
+      httpVersion: '',
+      cookies: [],
+      headers: [],
+      queryString: [],
+      headersSize: -1,
+      bodySize: -1,
+    },
+    response: {
+      status: exchange.status ?? 0,
+      statusText: '',
+      httpVersion: '',
+      cookies: [],
+      headers: [],
+      content: { size: 0, mimeType: '', _sizeUnavailable: true },
+      redirectURL: '',
+      headersSize: -1,
+      bodySize: -1,
+    },
+    cache: {},
+    timings: { send: -1, wait: -1, receive: -1 },
+    _resourceType: exchange.resourceType,
+    _statusObserved: exchange.status !== null,
+    _durationObserved: exchange.durationMs !== null,
+    ...(exchange.error ? { _error: redactBodyText(exchange.error, 200) } : {}),
+  }));
+  return {
+    log: {
+      version: '1.2',
+      creator: { name: 'Browser Bridge', version: api.runtime.getManifest().version },
+      entries,
+      _capture: {
+        active: capture.active,
+        startedDateTime: new Date(capture.startedAt).toISOString(),
+        totalRetained: selected.totalCaptured,
+        droppedEntries: capture.droppedEntries,
+        truncated: entries.length < selected.totalCaptured || capture.droppedEntries > 0,
+      },
+      _omissions: [
+        'Headers, cookies, bodies, query strings, fragments and URL credentials are omitted.',
+        'Unobserved status/time/size use required HAR placeholders and explicit observation flags.',
+        'Per-phase timings are unavailable (-1). Only observed request duration is measured.',
+        'Redirect hops sharing one browser request ID are not separate entries.',
+      ],
+    },
+  };
 }

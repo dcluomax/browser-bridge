@@ -54,9 +54,10 @@ jobs:
       - name: Stage binary archive
         shell: bash
         run: |
-          mkdir -p stage dist-host
+          mkdir -p stage dist-host "dist-raw/${{ matrix.label }}"
           cp "rust/target/${{ matrix.target }}/release/${{ matrix.bin }}" stage/
-          cp README.md CHANGELOG.md LICENSE docs/AGENT.md docs/VERSIONING.md docs/UPGRADE.md stage/
+          cp "rust/target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist-raw/${{ matrix.label }}/${{ matrix.bin }}"
+          cp README.md CHANGELOG.md LICENSE docs/AGENT.md docs/VERSIONING.md docs/UPGRADE.md docs/DEBUGGING.md docs/INSTALLATION.md stage/
           cp -R routines stage/routines
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             (cd stage && 7z a "../dist-host/browser-bridge-${{ matrix.label }}.zip" .)
@@ -66,7 +67,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: host-${{ matrix.label }}
-          path: dist-host/*
+          path: |
+            dist-host/*
+            dist-raw/${{ matrix.label }}/*
 
   build-extensions-and-sdk:
     name: Build Extensions & Python Wheel
@@ -95,6 +98,8 @@ jobs:
           name: extensions-and-python
           path: |
             extension/dist/artifacts/*
+            extension/dist/chromium/**
+            extension/dist/firefox/**
             dist-python/*
 
   publish-release:
@@ -104,14 +109,38 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
-      - name: Flatten release assets
+      - name: Assemble verified distribution packages & flatten release assets
         run: |
           mkdir -p flat-assets
-          find release-assets -type f -exec cp {} flat-assets/ \;
+          cp release-assets/dist-host/* flat-assets/
+          cp release-assets/extension/dist/artifacts/* flat-assets/
+          cp release-assets/dist-python/* flat-assets/
+          chmod +x release-assets/dist-raw/linux-x64/BrowserBridge
+          for pair in \
+            "windows-x64:windows-x86_64:BrowserBridge.exe" \
+            "windows-arm64:windows-aarch64:BrowserBridge.exe" \
+            "macos-arm64:macos-aarch64:BrowserBridge" \
+            "macos-x64:macos-x86_64:BrowserBridge" \
+            "linux-x64:linux-x86_64:BrowserBridge"
+          do
+            IFS=':' read -r label target bin <<< "$pair"
+            python3 scripts/distribution.py pack \
+              --root . \
+              --target "$target" \
+              --native-binary "release-assets/dist-raw/$label/$bin" \
+              --extension-dir "release-assets/extension/dist" \
+              --output flat-assets
+          done
           ls -lh flat-assets
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

@@ -2231,6 +2231,14 @@ pub fn upsert_site_memory(
         if r.name.trim().is_empty() || r.steps.is_empty() {
             return Err("Routine requires a non-empty name and at least one step.".to_string());
         }
+        let defaults: Map<String, Value> = r.params.iter()
+            .filter_map(|(name, param)| param.default.clone().map(|value| (name.clone(), value)))
+            .collect();
+        let resolved_steps: Vec<RoutineStep> = r.steps.iter().map(|step| RoutineStep {
+            params: interpolate_value(&step.params, &defaults),
+            ..step.clone()
+        }).collect();
+        validate_debug_routine_steps(&resolved_steps)?;
         let ts = now_iso8601();
         r.updated_at = Some(ts.clone());
         if r.verified_at.is_none() {
@@ -4249,6 +4257,16 @@ pub fn canonical_step_method(op: &str) -> Result<&'static str, String> {
         "webmcp.list" | "page.webmcp.list" => Ok("page.webmcp.list"),
         "webmcp.call" | "page.webmcp.call" => Ok("page.webmcp.call"),
         "dialog" | "page.dialog" => Ok("page.dialog"),
+        "styles" | "page.styles" => Ok("page.styles"),
+        "layout" | "page.layout" => Ok("page.layout"),
+        "domBaseline" | "dom_baseline" | "page.domBaseline" => Ok("page.domBaseline"),
+        "patch" | "page.patch" => Ok("page.patch"),
+        "performance" | "page.performance" => Ok("page.performance"),
+        "har" | "page.har" => Ok("page.har"),
+        "debugger" | "page.debugger" => Ok("page.debugger"),
+        "intercept" | "page.intercept" => Ok("page.intercept"),
+        "network" | "page.network" => Ok("page.network"),
+        "console" | "page.console" => Ok("page.console"),
         other => Err(format!("Unsupported routine step op '{other}'.")),
     }
 }
@@ -4266,7 +4284,57 @@ pub fn is_read_safe_step(method: &str) -> bool {
             | "page.screenshot"
             | "page.fetch"
             | "page.webmcp.list"
+            | "page.styles"
+            | "page.layout"
+            | "page.domBaseline"
+            | "page.performance"
+            | "page.har"
+            | "page.debugger"
+            | "page.network"
+            | "page.console"
     )
+}
+
+pub fn is_read_safe_step_with_params(method: &str, params: &Value) -> bool {
+    if matches!(method, "page.patch" | "page.intercept") {
+        return params.get("action").and_then(Value::as_str).unwrap_or("list") == "list";
+    }
+    is_read_safe_step(method)
+        && (method != "page.fetch"
+            || matches!(
+                params.get("method").and_then(Value::as_str).unwrap_or("GET").to_ascii_uppercase().as_str(),
+                "GET" | "HEAD"
+            ))
+}
+
+fn validate_debug_routine_steps(steps: &[RoutineStep]) -> Result<(), String> {
+    fn has_live_reference(value: &Value) -> bool {
+        match value {
+            Value::Object(fields) => fields.iter().any(|(key, value)| {
+                if matches!(key.as_str(), "attributes" | "styles") {
+                    return false;
+                }
+                (matches!(key.as_str(), "id" | "documentId" | "ref")
+                    && value.as_str().is_some_and(|text| !text.contains("{{")))
+                    || has_live_reference(value)
+            }),
+            Value::Array(values) => values.iter().any(has_live_reference),
+            _ => false,
+        }
+    }
+    for (index, step) in steps.iter().enumerate() {
+        if matches!(
+            canonical_step_method(&step.op).ok(),
+            Some("page.domBaseline" | "page.patch")
+        ) && has_live_reference(&step.params)
+        {
+            return Err(format!(
+                "Diagnostic routine step {} contains a live document handle/ref. Use a locator and a runtime binding such as {{{{baseline.id}}}} instead. [bad_request]",
+                index + 1
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn extract_url_template_vars(raw_url: &str) -> Map<String, Value> {
@@ -4395,33 +4463,57 @@ fn percent_encode_component(raw: &str) -> String {
     out
 }
 
+fn template_variable<'a>(vars: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
+    if let Some(value) = vars.get(key) {
+        return Some(value);
+    }
+    let mut parts = key.split('.');
+    let mut value = vars.get(parts.next()?)?;
+    for part in parts {
+        value = if value.is_array() {
+            value.get(part.parse::<usize>().ok()?)?
+        } else {
+            value.get(part)?
+        };
+    }
+    Some(value)
+}
+
 fn interpolate_value(template: &Value, vars: &Map<String, Value>) -> Value {
     match template {
         Value::String(s) => {
             if let Some(inner) = s.strip_prefix("{{").and_then(|rest| rest.strip_suffix("}}")) {
                 let key = inner.trim();
                 if !key.contains('{') && !key.contains('}') && !key.contains(':') {
-                    if let Some(exact) = vars.get(key) {
+                    if let Some(exact) = template_variable(vars, key) {
                         return exact.clone();
                     }
                 }
             }
-            let mut rendered = s.clone();
-            for (k, v) in vars {
-                let rep = match v {
-                    Value::String(vs) => vs.clone(),
-                    Value::Null => String::new(),
-                    other => other.to_string(),
+            let mut rendered = String::new();
+            let mut rest = s.as_str();
+            while let Some(start) = rest.find("{{") {
+                rendered.push_str(&rest[..start]);
+                let Some(end) = rest[start + 2..].find("}}").map(|n| start + 2 + n) else {
+                    rendered.push_str(&rest[start..]);
+                    rest = "";
+                    break;
                 };
-                let enc_token = format!("{{{{{k}:urlencode}}}}");
-                if rendered.contains(&enc_token) {
-                    rendered = rendered.replace(&enc_token, &percent_encode_component(&rep));
+                let token = rest[start + 2..end].trim();
+                let (key, encoded) = token.strip_suffix(":urlencode").map_or((token, false), |key| (key, true));
+                if let Some(value) = template_variable(vars, key) {
+                    let replacement = match value {
+                        Value::String(text) => text.clone(),
+                        Value::Null => String::new(),
+                        other => other.to_string(),
+                    };
+                    rendered.push_str(&if encoded { percent_encode_component(&replacement) } else { replacement });
+                } else {
+                    rendered.push_str(&rest[start..end + 2]);
                 }
-                let token = format!("{{{{{k}}}}}");
-                if rendered.contains(&token) {
-                    rendered = rendered.replace(&token, &rep);
-                }
+                rest = &rest[end + 2..];
             }
+            rendered.push_str(rest);
             Value::String(rendered)
         }
         Value::Array(arr) => Value::Array(arr.iter().map(|item| interpolate_value(item, vars)).collect()),
@@ -4762,7 +4854,7 @@ where
 
     for (idx, step) in routine.steps.iter().enumerate() {
         let method = canonical_step_method(&step.op)?;
-        if enforce_read_only && !is_read_safe_step(method) {
+        if enforce_read_only && !is_read_safe_step_with_params(method, &interpolate_value(&step.params, &vars)) {
             return Err(format!(
                 "Step {} ({method}) is not allowed in read-only mode. [read_only]",
                 idx + 1
@@ -5082,20 +5174,14 @@ pub async fn execute_batch(client: &BridgeClient, opts: BatchRunOptions<'_>) -> 
         }
     }
 
+    if opts.save_as_routine.is_some() {
+        validate_debug_routine_steps(opts.steps)?;
+    }
     // Validate all step ops and read-only constraints upfront before executing mutations.
     let mut all_read_safe = true;
     for (idx, step) in opts.steps.iter().enumerate() {
         let method = canonical_step_method(&step.op)?;
-        let step_read_safe = is_read_safe_step(method)
-            && (method != "page.fetch" || {
-                let m = step
-                    .params
-                    .get("method")
-                    .and_then(Value::as_str)
-                    .unwrap_or("GET")
-                    .to_ascii_uppercase();
-                m == "GET" || m == "HEAD"
-            });
+        let step_read_safe = is_read_safe_step_with_params(method, &interpolate_value(&step.params, &vars));
         all_read_safe &= step_read_safe;
         if opts.enforce_read_only && !step_read_safe {
             return Err(format!(
@@ -5127,6 +5213,9 @@ pub async fn execute_batch(client: &BridgeClient, opts: BatchRunOptions<'_>) -> 
         }
 
         let mut p_val = interpolate_value(&step.params, &vars);
+        if opts.enforce_read_only && !is_read_safe_step_with_params(method, &p_val) {
+            return Err(format!("Batch step {} ({method}) is not allowed in read-only mode. [read_only]", idx + 1));
+        }
         let mut strip_html = false;
         if method == "page.fetch" {
             if let Some(obj) = p_val.as_object_mut() {
@@ -5347,6 +5436,56 @@ mod tests {
         assert_eq!(out["exact"], json!(3));
         assert_eq!(out["inline"], json!("Node: Cylinder #3"));
         assert_eq!(out["url"], json!("https://github.com/search?q=rust%20async%20%26%20c%23"));
+    }
+
+    #[test]
+    fn diagnostic_output_bindings_preserve_types_and_document_handles_are_not_persisted() {
+        let vars = json!({
+            "baseline": { "id": "baseline-live", "frameId": 19327352834_i64 },
+            "url.origin": "https://example.test",
+            "literal": "{{baseline.id}}"
+        }).as_object().unwrap().clone();
+        let result = interpolate_value(&json!({
+            "id": "{{baseline.id}}",
+            "frameId": "{{baseline.frameId}}",
+            "inline": "compare {{baseline.id}} on {{url.origin}}",
+            "literal": "{{literal}}"
+        }), &vars);
+        assert_eq!(result["id"], "baseline-live");
+        assert_eq!(result["frameId"], 19327352834_i64);
+        assert_eq!(result["inline"], "compare baseline-live on https://example.test");
+        assert_eq!(result["literal"], "{{baseline.id}}");
+        let mut step = RoutineStep {
+            op: "domBaseline".into(),
+            params: json!({ "action": "compare", "id": "baseline-live" }),
+            save_as: None,
+            optional: false,
+        };
+        assert!(validate_debug_routine_steps(&[step.clone()]).is_err());
+        step.params["id"] = json!("{{baseline.id}}");
+        assert!(validate_debug_routine_steps(&[step]).is_ok());
+        assert!(validate_debug_routine_steps(&[RoutineStep {
+            op: "patch".into(),
+            params: json!({ "action": "apply", "changes": [{ "target": { "locator": { "steps": [{ "kind": "css", "value": "h1" }] } }, "attributes": { "id": "debug-heading" } }] }),
+            save_as: None,
+            optional: false,
+        }]).is_ok());
+        assert!(is_read_safe_step_with_params("page.patch", &json!({ "action": "list" })));
+        assert!(!is_read_safe_step_with_params("page.patch", &json!({ "action": "apply" })));
+        assert!(!is_read_safe_step_with_params("page.intercept", &json!({ "action": "set" })));
+        assert_eq!(canonical_step_method("styles").unwrap(), "page.styles");
+    }
+
+    #[test]
+    fn diagnostic_routine_defaults_cannot_hide_persisted_document_handles() {
+        let _iso = ScopedTestRoutinesDir::new("debug-defaults");
+        let routine: RoutineDefinition = serde_json::from_value(json!({
+            "name": "cached_baseline",
+            "params": { "saved": { "type": "string", "default": "db_old_document" } },
+            "steps": [{ "op": "domBaseline", "params": { "action": "compare", "id": "{{saved}}" } }]
+        })).unwrap();
+        let result = upsert_site_memory("example.test", None, Some(routine), None, false);
+        assert!(result.unwrap_err().contains("live document handle"));
     }
 
     #[test]

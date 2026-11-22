@@ -1,6 +1,6 @@
-# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.x` → `v0.12.0`)
+# Upgrade Notes (`v0.7.0` / `v0.10.x` / `v0.11.x` / `v0.12.0` → `v0.13.1`)
 
-**Browser Bridge `v0.12.0`** introduces **Zero-Collision, Sub-Millisecond Multi-Browser & Multi-Profile Auto-Routing** (`< 1 ms` cloned-profile `instanceId` rotation, event-driven `O(1)` `tabId` router across Edge/Chrome/Brave/Firefox, unified `browser:label` / `browser:prefix` selectors, and `[ambiguous_tab]` safety guard) and **Zero-Dependency Native Streaming Media Discovery & HLS/fMP4 Downloader (`browser_media`, `browser_download`, `Page.media()`, `Page.download_media()`, `BrowserBridge download`)**, alongside **Quality-Constrained `SiteLearner` v2 (`waitForDomQuiet`)** and **24 built-in timestamped playbooks (`routines/*.json`)**.
+**Browser Bridge `v0.13.1`** introduces **Structured Live-Tab Diagnostics & Reversible Temporary Patches** (`browser_styles`, `browser_layout`, `browser_dom_baseline`, `browser_patch`, `browser_performance`, `browser_har`, `browser_debugger`, `browser_intercept`, and `Page.temporary_patch`), **Verified Deterministic Packaging & Transactional Updates (`scripts/distribution.py`)**, **Zero-Collision Sub-Millisecond Multi-Browser Auto-Routing**, and **Zero-Dependency Native HLS/fMP4 Media Retrieval (`browser_media` / `browser_download`)**, alongside **Quality-Constrained `SiteLearner` v2 (`waitForDomQuiet`)** and **24 built-in timestamped playbooks (`routines/*.json`)**.
 
 ---
 

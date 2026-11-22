@@ -245,6 +245,7 @@ export async function handleContextMenuClick(
   registry: TabRegistry,
   native: NativeConnection,
   ensureReady: () => Promise<void>,
+  releaseDebugTab?: (tabId: number) => Promise<void>,
 ): Promise<void> {
   await ensureReady();
   if (!tab || tab.id === undefined) return;
@@ -297,6 +298,7 @@ export async function handleContextMenuClick(
         await copyAndToastInTab(tabId, null, t.toastEnabledRo);
       } else {
         const nextMode = existing.mode === 'read' ? 'write' : 'read';
+        if (nextMode === 'read') await releaseDebugTab?.(tabId);
         registry.setMode(tabId, nextMode);
         syncContextMenuForTab(registry, tabId);
         await copyAndToastInTab(
@@ -310,6 +312,7 @@ export async function handleContextMenuClick(
 
     case MENU_STOP_SHARE: {
       if (registry.grants.has(tabId)) {
+        await releaseDebugTab?.(tabId);
         registry.revoke(tabId);
         await cdp.detach(tabId);
         syncContextMenuForTab(registry, tabId);

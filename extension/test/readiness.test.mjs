@@ -207,6 +207,8 @@ function installGlobals(env, navEntry) {
   globalThis.innerWidth = 1280;
   globalThis.innerHeight = 800;
   globalThis.window = globalThis;
+  globalThis.addEventListener = env.doc.addEventListener;
+  globalThis.removeEventListener = env.doc.removeEventListener;
   globalThis.performance.getEntriesByType = (type) =>
     type === 'navigation' ? (navEntry ? [navEntry] : []) : origGetEntriesByType(type);
 }

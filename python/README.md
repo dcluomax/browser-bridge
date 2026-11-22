@@ -1,6 +1,6 @@
 # Browser Bridge Python SDK
 
-The Python SDK (`0.12.0`) connects directly to the Browser Bridge Named Pipe
+The Python SDK (`0.13.1`) connects directly to the Browser Bridge Named Pipe
 (Windows) or Unix Domain Socket (macOS / Linux) with zero intermediate child
 process (`~1.1 ms` median roundtrip). Any external language can connect directly over the
 same open JSON-line IPC protocol, or optionally launch `BrowserBridge rpc` over
@@ -412,12 +412,41 @@ profile = page.access_profile()
 result = page.run_routine("read_diagram_xml", {})
 ```
 
+## Structured debugging and temporary patches
+
+The Python API exposes the same diagnostics as MCP and direct IPC:
+`computed_styles`, `style_context`, `box_model`, `hit_test`, DOM baseline lifecycle,
+temporary patches, `performance`, and `export_har`.
+
+```python
+heading = page.locator("#heading")
+baseline = page.create_dom_baseline(locator=heading)
+with page.temporary_patch([{"target": heading, "styles": {"color": "green"}}]):
+    print(page.computed_styles(locator=heading, properties=["color"]))
+    print(page.box_model(locator=heading))
+print(page.compare_dom_baseline(baseline["id"], frame_id=baseline["frameId"]))
+page.release_dom_baseline(baseline["id"], frame_id=baseline["frameId"])
+```
+
+Handles belong to one session and frame. They expire and do not survive navigation.
+The context manager attempts conflict-safe rollback on exit. It does not change
+source. Read-only clients can inspect but cannot apply, commit or roll back patches.
+
+The new methods also work in batches and site routines. Use nested runtime output
+bindings such as `{{baseline.id}}`. Do not persist literal document handles or refs
+in reusable diagnostic steps.
+
+Chromium also exposes `debugger_metrics` and explicit bounded
+`set_interception` / `clear_interception` request mocks. Firefox rejects those
+debugger-only operations. See [Structured debugging](../docs/DEBUGGING.md) for
+output, privacy, limits and lifecycle details.
+
 ## Compatibility, not blanket equivalence
 
 This SDK provides a familiar Playwright-inspired locator and page model over
 your live browser tabs. It is not the Playwright package or a promise of
 complete, per-API compatibility. Isolated contexts, launch flags, proxies,
-network interception/mocks, arbitrary CDP sessions, Playwright Test, and
+arbitrary CDP sessions, Playwright Test, and
 browser-download event streams are not implemented. Use reported capabilities
 and explicit failures rather than silently treating these different browser
 models as equivalent.

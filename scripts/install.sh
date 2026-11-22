@@ -1,120 +1,86 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Turnkey installer for Browser Bridge on macOS and Linux.
-# Usage:
-#   ./scripts/install.sh [--register-copilot] [--register-claude] [--register-cursor] [--register-all]
-#                        [--install-python] [--read-only] [--allow-evaluate] [--skip-extension-build]
-
-REGISTER_COPILOT=0
-REGISTER_CLAUDE=0
-REGISTER_CURSOR=0
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENGINE="${REPO}/scripts/distribution.py"
+PYTHON="${BROWSER_BRIDGE_PYTHON:-python3}"
+PACKAGE=""
+OUTPUT="${REPO}/dist"
+SKIP_DESKTOP=0
+SKIP_EXTENSION=0
+VALIDATE_ONLY=0
 INSTALL_PYTHON=0
-READ_ONLY=0
-ALLOW_EVAL=0
-SKIP_EXT=0
+FIREFOX_XPI=""
+INSTALL_ROOT="${HOME}/.browser-bridge"
+OPTIONS=()
+BROWSERS=()
 
-for arg in "$@"; do
-  case "$arg" in
-    --register-copilot) REGISTER_COPILOT=1 ;;
-    --register-claude)  REGISTER_CLAUDE=1 ;;
-    --register-cursor)  REGISTER_CURSOR=1 ;;
-    --register-all)     REGISTER_COPILOT=1; REGISTER_CLAUDE=1; REGISTER_CURSOR=1 ;;
-    --install-python)   INSTALL_PYTHON=1 ;;
-    --read-only)        READ_ONLY=1 ;;
-    --allow-evaluate)   ALLOW_EVAL=1 ;;
-    --skip-extension-build) SKIP_EXT=1 ;;
+need_value() {
+  [[ $# -ge 2 && -n "$2" ]] || { printf 'Missing value for %s\n' "$1" >&2; exit 2; }
+}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-desktop|--host-only) SKIP_DESKTOP=1; shift ;;
+    --skip-extension-build) SKIP_EXTENSION=1; shift ;;
+    --validate-only) VALIDATE_ONLY=1; shift ;;
+    --install-python) INSTALL_PYTHON=1; shift ;;
+    --prebuilt-package) need_value "$@"; PACKAGE="$2"; shift 2 ;;
+    --output) need_value "$@"; OUTPUT="$2"; shift 2 ;;
+    --install-root) need_value "$@"; INSTALL_ROOT="$2"; shift 2 ;;
+    --firefox-xpi) need_value "$@"; FIREFOX_XPI="$2"; shift 2 ;;
+    --browser) need_value "$@"; BROWSERS+=("$2"); shift 2 ;;
+    --descriptor|--sha256|--version|--agent|--copilot-config|--codex-config|--claude-config|--firefox-exe)
+      need_value "$@"; OPTIONS+=("$1" "$2"); shift 2 ;;
+    --read-only|--read-write|--allow-evaluate|--deny-evaluate|--firefox-dev-launcher)
+      OPTIONS+=("$1"); shift ;;
+    --register-copilot|--register-copilot-mcp) OPTIONS+=(--agent copilot); shift ;;
+    --register-codex|--register-codex-mcp) OPTIONS+=(--agent codex); shift ;;
+    --register-claude|--register-claude-mcp) OPTIONS+=(--agent claude); shift ;;
+    --register-all) OPTIONS+=(--agent copilot --agent codex --agent claude); shift ;;
     -h|--help)
-      sed -n '3,6p' "$0"
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $arg" >&2
-      exit 2
-      ;;
+      printf '%s\n' 'Usage: install.sh [--prebuilt-package ZIP] [--browser edge|chrome|chromium|firefox] [--agent copilot|codex|claude] [--firefox-dev-launcher]'
+      exit 0 ;;
+    *) printf 'Unknown installation option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-APP_DIR="${HOME}/.browser-bridge/app"
-EXT_DIR="${HOME}/.browser-bridge/extension"
-
-if [[ "${SKIP_EXT}" -eq 0 ]]; then
-  cd "${REPO}/extension"
-  [[ -d node_modules ]] || npm ci --no-fund --no-audit
-  node build.mjs
-fi
-
-cd "${REPO}/rust"
-cargo build --release -p browser-bridge
-
-mkdir -p "${APP_DIR}" "${EXT_DIR}/chromium" "${EXT_DIR}/firefox"
-cp "${REPO}/rust/target/release/BrowserBridge" "${APP_DIR}/BrowserBridge"
-chmod +x "${APP_DIR}/BrowserBridge"
-
-rm -rf "${EXT_DIR}/chromium" "${EXT_DIR}/firefox"
-mkdir -p "${EXT_DIR}/chromium" "${EXT_DIR}/firefox"
-cp -R "${REPO}/extension/dist/chromium/." "${EXT_DIR}/chromium/"
-cp -R "${REPO}/extension/dist/firefox/." "${EXT_DIR}/firefox/"
-
-CHROMIUM_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${REPO}/extension/bridge.config.json','utf8')).chromiumExtensionId)")"
-GECKO_ID="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${REPO}/extension/bridge.config.json','utf8')).geckoId)")"
-
-"${APP_DIR}/BrowserBridge" install --chromium-id "${CHROMIUM_ID}" --gecko-id "${GECKO_ID}" --host-path "${APP_DIR}/BrowserBridge"
-
-register_mcp_json() {
-  local cfg_path="$1"
-  local is_copilot="$2"
-  local label="$3"
-  node - "${cfg_path}" "${APP_DIR}/BrowserBridge" "${is_copilot}" "${READ_ONLY}" "${ALLOW_EVAL}" "${label}" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const [cfgPath, exe, isCopilot, ro, allowEval, label] = process.argv.slice(2);
-const dir = path.dirname(cfgPath);
-fs.mkdirSync(dir, { recursive: true });
-let doc = { mcpServers: {} };
-if (fs.existsSync(cfgPath)) {
-  doc = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+"${PYTHON}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
+  printf '%s\n' 'Python 3.11+ is required. Offline installation needs no Rust or Node.' >&2; exit 1;
 }
-doc.mcpServers = doc.mcpServers || {};
-const args = ['mcp'];
-if (ro === '1') args.push('--read-only');
-if (allowEval === '1') args.push('--allow-evaluate');
-doc.mcpServers['browser-bridge'] = isCopilot === '1'
-  ? { type: 'local', command: exe, args, tools: ['*'] }
-  : { command: exe, args };
-fs.writeFileSync(cfgPath, JSON.stringify(doc, null, 2) + '\n', 'utf8');
-console.log(`Registered MCP server 'browser-bridge' for ${label} in ${cfgPath}`);
-NODE
-}
+[[ "${VALIDATE_ONLY}" -eq 0 || -n "${PACKAGE}" ]] || { printf '%s\n' '--validate-only requires --prebuilt-package.' >&2; exit 2; }
+[[ -z "${PACKAGE}" || -z "${FIREFOX_XPI}" ]] || { printf '%s\n' 'A prebuilt package cannot be modified with --firefox-xpi.' >&2; exit 2; }
 
-if [[ "${REGISTER_COPILOT}" -eq 1 ]]; then
-  register_mcp_json "${HOME}/.copilot/mcp-config.json" "1" "GitHub Copilot"
-fi
-
-if [[ "${REGISTER_CLAUDE}" -eq 1 ]]; then
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    CLAUDE_CFG="${HOME}/Library/Application Support/Claude/claude_desktop_config.json"
-  else
-    CLAUDE_CFG="${XDG_CONFIG_HOME:-${HOME}/.config}/Claude/claude_desktop_config.json"
+if [[ -z "${PACKAGE}" ]]; then
+  if [[ "${SKIP_EXTENSION}" -eq 0 ]]; then
+    (cd "${REPO}/extension" && ([[ -d node_modules ]] || npm ci --no-fund --no-audit) && node build.mjs --zip)
   fi
-  register_mcp_json "${CLAUDE_CFG}" "0" "Claude Desktop"
+  (cd "${REPO}/rust" && cargo build --locked --release -p browser-bridge)
+  PACKAGE_OPTIONS=(pack --root "${REPO}" --native-binary "${REPO}/rust/target/release/BrowserBridge" --output "${OUTPUT}")
+  if [[ -n "${FIREFOX_XPI}" ]]; then PACKAGE_OPTIONS+=(--firefox-xpi "${FIREFOX_XPI}"); fi
+  "${PYTHON}" "${ENGINE}" "${PACKAGE_OPTIONS[@]}"
+  VERSION="$("${PYTHON}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "${REPO}/extension/package.json")"
+  TARGET="$("${PYTHON}" -c 'import sys; sys.path.insert(0,sys.argv[1]); from distribution import current_target; print(current_target())' "${REPO}/scripts")"
+  PACKAGE="${OUTPUT}/browser-bridge-${VERSION}-${TARGET}.zip"
 fi
 
-if [[ "${REGISTER_CURSOR}" -eq 1 ]]; then
-  register_mcp_json "${HOME}/.cursor/mcp.json" "0" "Cursor"
+if [[ "${VALIDATE_ONLY}" -eq 1 ]]; then
+  VERIFY_OPTIONS=(verify --package "${PACKAGE}")
+  for ((index=0; index<${#OPTIONS[@]}; index++)); do
+    case "${OPTIONS[index]}" in
+      --descriptor|--sha256|--version)
+        VERIFY_OPTIONS+=("${OPTIONS[index]}" "${OPTIONS[index+1]}"); ((index+=1)) ;;
+    esac
+  done
+  "${PYTHON}" "${ENGINE}" "${VERIFY_OPTIONS[@]}"
+  exit 0
 fi
-
+if [[ ${#BROWSERS[@]} -eq 0 ]]; then BROWSERS=(firefox); fi
+INSTALL_OPTIONS=(install --package "${PACKAGE}" --install-root "${INSTALL_ROOT}")
+if [[ "${SKIP_DESKTOP}" -eq 1 ]]; then INSTALL_OPTIONS+=(--skip-desktop); fi
+for browser in "${BROWSERS[@]}"; do INSTALL_OPTIONS+=(--browser "${browser}"); done
+# Bash 3.2 (macOS) rejects an empty array expansion under `set -u`.
+"${PYTHON}" "${ENGINE}" "${INSTALL_OPTIONS[@]}" ${OPTIONS[@]+"${OPTIONS[@]}"}
 if [[ "${INSTALL_PYTHON}" -eq 1 ]]; then
-  python3 -m pip install "${REPO}/python"
+  "${PYTHON}" -m pip install "${REPO}/python"
 fi
-
-echo ""
-echo "Browser Bridge installed successfully!"
-echo "Load the extension once per browser profile:"
-echo "  Edge:    edge://extensions   -> Developer mode -> Load unpacked -> ${EXT_DIR}/chromium"
-echo "  Chrome:  chrome://extensions -> Developer mode -> Load unpacked -> ${EXT_DIR}/chromium"
-echo "  Firefox: about:debugging#/runtime/this-firefox -> Load Temporary Add-on -> ${EXT_DIR}/firefox/manifest.json"
-echo "Expected Chromium extension id: ${CHROMIUM_ID}"
-echo "Native host & MCP server:       ${APP_DIR}/BrowserBridge"
-echo "Verify connection status with:  \"${APP_DIR}/BrowserBridge\" status"
+printf '%s\n' 'No browser or agent was restarted. See docs/INSTALLATION.md for supported browser activation.'

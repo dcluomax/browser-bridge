@@ -9,7 +9,30 @@ See **[`docs/VERSIONING.md`](docs/VERSIONING.md)** for the formal SemVer & Site-
 - **2nd digit (`MINOR`, `x.Y.0`)**: New core engine capabilities, new MCP tools/permissions, or new SDK APIs.
 - **1st digit (`MAJOR`, `X.0.0`)**: Breaking wire-protocol, MCP schema, or SDK changes.
 
-For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)**.
+For step-by-step migration instructions, see **[`docs/UPGRADE.md`](docs/UPGRADE.md)** and **[`docs/INSTALLATION.md`](docs/INSTALLATION.md)**.
+
+## [0.13.1] - 2026-11-21
+
+### Fixed
+- Accept legitimate relative `.` components and the packaged popup stylesheet (`popup.css`) in `scripts/distribution.py` without weakening path-traversal or reserved Windows name checks.
+- Enable Firefox's required chrome-debugger setting (`devtools.chrome.enabled`) only in the dedicated managed development profile, migrate exact legacy preferences atomically, refuse unknown or user-edited profiles, and keep Firefox signing enabled.
+- Fix `scripts/install.sh` on macOS system Bash 3.2 so running without optional policy, agent, or version arguments no longer fails with `OPTIONS[@]: unbound variable` under `set -u`.
+- Publish these installer and profile fixes under a distinct `0.13.1` patch version without replacing installed package bytes under an existing release version.
+
+## [0.13.0] - 2026-11-21
+
+### Upgrade Notes (`0.12.0` → `0.13.x`)
+- **Minor Version Upgrade (`0.13.x` — Structured Live-Tab Diagnostics, Reversible Temporary Patches & Verified Transactional Packaging)**: Re-run the prebuilt bootstrapper (`irm https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.ps1 | iex` or `curl -fsSL https://raw.githubusercontent.com/dcluomax/browser-bridge/main/scripts/bootstrap.sh | bash`) or transactional installer (`.\scripts\install.ps1` / `bash scripts/install.sh`; see **[`docs/INSTALLATION.md`](docs/INSTALLATION.md)**), reinstall the Python SDK if used (`pip install ./python`), and click **Reload (`↻`)** once on the **Browser Bridge** extension card (`edge://extensions` / `chrome://extensions`). Native/extension release-line drift now surfaces automatically in the popup and MCP `browser_status`.
+
+### Added in `0.13.0`
+1. **Structured Live-Tab Diagnostics & Reversible Temporary Patches ([`docs/DEBUGGING.md`](docs/DEBUGGING.md))**:
+   - **Computed CSS, Cascade Context, Box Models & Hit Testing**: New MCP tools (`browser_styles`, `browser_layout`), wire methods (`page.styles`, `page.layout`), and Python SDK methods (`computed_styles`, `style_context`, `box_model`, `hit_test`) across frames and shadow roots.
+   - **Memory-Only Semantic DOM Baselines (`browser_dom_baseline` / `Page.create_dom_baseline`)**: Session-owned, frame-scoped baselines (`visible-semantic-light-dom`) with bounded diff evidence, 5-minute TTLs, and automatic navigation invalidation without storing sensitive form values.
+   - **Conflict-Safe Reversible DOM/Style Patches (`browser_patch` / `Page.temporary_patch`)**: Atomic 1–50 change style, safe-attribute, and leaf-text probes with conflict-safe rollback, TTL expiry, session-close cleanup, and live-document-only `commit`.
+   - **Sanitized HAR 1.2 Export, Performance Evidence & Chromium Debugger Controls**: Metadata-only HAR 1.2 export (`browser_har` / `export_har`) from explicit network capture, W3C navigation/resource point samples (`browser_performance` / `performance`), plus Chromium-only `browser_debugger` metrics and bounded `browser_intercept` block/mock rules without exposing arbitrary JS `eval`.
+   - **Typed Dotted Routine & Batch Bindings**: Supports diagnostic operations inside `browser_batch` and Site Routines with nested runtime output interpolation such as `{{baseline.id}}` while blocking persistence of volatile document handles.
+2. **Deterministic Packaging, Transactional Installs & Opt-In Updates ([`docs/INSTALLATION.md`](docs/INSTALLATION.md))**:
+   - **Zero-Dependency Verified Distribution Engine (`scripts/distribution.py`)**: Deterministic ZIP/XPI packaging (`extension/scripts/archive.mjs`), SHA-256 + manifest + binary-format verification, compare-and-swap transactional installation with automatic rollback (`rollback`, `repair`, `pin`, `unpin`), surgical MCP config merging (`scripts/agent_config.py`), dedicated-profile Firefox temporary-add-on launcher (`scripts/firefox_dev.py`), and opt-in Windows idle-safe update task (`scripts/auto-update.ps1`).
 
 ## [0.12.0] - 2026-11-20
 

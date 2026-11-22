@@ -9,6 +9,7 @@ const localStore = new Map();
 const sessionStore = new Map();
 const event = () => ({ addListener() {}, removeListener() {} });
 globalThis.chrome = {
+  runtime: { getManifest: () => ({ version: '0.13.0' }) },
   action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   tabs: {
     onUpdated: event(), onCreated: event(),

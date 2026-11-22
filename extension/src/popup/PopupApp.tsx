@@ -17,7 +17,7 @@ import {
 import { buildAgentPrompt, defaultGuidePath, hostOfUrl, isShareableUrl } from './prompt.ts';
 
 declare const __EXT_VERSION__: string;
-const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.12.0';
+const POPUP_VERSION = typeof __EXT_VERSION__ === 'string' ? __EXT_VERSION__ : '0.13.1';
 
 export interface PopupState {
   status: string;
@@ -28,6 +28,7 @@ export interface PopupState {
   browser?: string;
   instanceId?: string;
   extensionVersion: string;
+  versionWarning?: string;
   contextMenuReady?: boolean;
   contextMenuError?: string;
   settings: {
@@ -283,6 +284,11 @@ export function PopupApp() {
     autoCopyCaption: isZhTw ? '點擊即自動複製提示詞' : isZh ? '点击即自动复制提示词' : isJa ? 'クリックでプロンプトを自動コピー' : 'Auto-copies prompt on share',
     appearanceLabel: isZhTw ? '外觀主題' : isZh ? '外观主题' : isJa ? 'テーマ' : 'Appearance',
     diagnosticsLabel: isZhTw ? '連線與指南' : isZh ? '连接与本地指南' : isJa ? '接続とガイド' : 'Connection & Guide',
+    versionMismatch: (host: string, extension: string) => isZhTw
+      ? `原生程式 v${host} 與擴充套件 v${extension} 的版本系列不一致。請更新原生程式。請重新載入擴充套件。`
+      : isZh ? `原生程序 v${host} 与扩展 v${extension} 的版本系列不一致。请更新原生程序。请重新加载扩展。`
+        : isJa ? `ホスト v${host} と拡張機能 v${extension} のリリース系列が異なります。ホストを更新し、拡張機能を再読み込みしてください。`
+          : `Native host v${host} and extension v${extension} use different release lines. Update the host. Reload the extension.`,
     permDetailsSummary: isZhTw ? '權限說明' : isZh ? '只读 / 读写权限说明' : isJa ? '権限について' : 'Read-Only vs Read-Write permissions',
     groupTabsLabel: isZh ? '后台折叠 Agent 标签组' : isJa ? 'Agent タブを背面グループに収納' : 'Collapse agent tabs in background group',
     groupTabsDesc: isZh ? 'Agent 新开标签默认静默放入折叠的 [Agent] 组，不抢焦点' : isJa ? '新規タブを背面の折りたたみグループで開きます' : 'Open agent tabs silently in a collapsed [Agent] group without stealing focus',
@@ -340,6 +346,12 @@ export function PopupApp() {
             />
           </div>
         </header>
+
+        {connected && state.versionWarning && (
+          <div className="bb-upgrade-box" role="status">
+            <span>{uiExtra.versionMismatch(state.hostVersion, state.extensionVersion)}</span>
+          </div>
+        )}
 
         {workerOutdated && (
           <div className="bb-upgrade-box" role="status">

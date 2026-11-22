@@ -5,14 +5,14 @@
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
-[![Release v0.12.0](https://img.shields.io/badge/Release-v0.12.0-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
+[![Release v0.13.1](https://img.shields.io/badge/Release-v0.13.1-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
 [![100% 本地](https://img.shields.io/badge/100%25%20Local-纯本地零云端-0284c7)](#四大核心基因本地--安全--fast--自我进化)
 [![零端口安全](https://img.shields.io/badge/Secure-零端口%20%7C%20三层读写锁-059669)](docs/SECURITY_MODEL.md)
 [![原生极速](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20直连管道-d97706)](#四大核心基因本地--安全--fast--自我进化)
 [![站点优化](https://img.shields.io/badge/Website%20Optimizations-24%20站点时间戳%20JSON%20%7C%20最高提速%201800x-6366f1)](#website-optimizations24-个站点优化与剔除网络耗时实测对比)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
 
-**[English](README.md)** · **简体中文** · **[站点优化实测](#website-optimizations24-个站点优化与剔除网络耗时实测对比)** · **[1-Prompt 安装手册](docs/INSTALL.md)** · **[升级说明 (v0.12.0)](docs/UPGRADE.md)** · **[版本更新规范](docs/VERSIONING.md)** · **[完整使用指南](docs/USAGE.md)** · **[核心特性详解](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[GitHub Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**[English](README.md)** · **简体中文** · **[站点优化实测](#website-optimizations24-个站点优化与剔除网络耗时实测对比)** · **[1-Prompt 安装手册](docs/INSTALL.md)** · **[事务化安装与升级](docs/INSTALLATION.md)** · **[结构化调试与临时补丁](docs/DEBUGGING.md)** · **[升级说明 (v0.13.1)](docs/UPGRADE.md)** · **[版本更新规范](docs/VERSIONING.md)** · **[完整使用指南](docs/USAGE.md)** · **[核心特性详解](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[GitHub Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -196,14 +196,15 @@ cd browser-bridge
 
 - **质量约束型长尾自学习 (`SiteLearner` v2)**：即使访问 24 个内置 [`routines/*.json`](routines/) 之外的内部系统或长尾网站，也会在全序等待策略（`commit < domcontentloaded < load`）与事件驱动 `waitForDomQuiet` 静默窗口上限之间执行质量约束多臂赌博机选择：满足 `k >= 3` 次一致观测才切换策略、强制执行 `>= 85%` 正文完整度底线与安全回退、连续稳定访问自动衰减等待上限、遵守 `_noLearn` 探测隔离，并自动记录遮挡弹窗恢复三元组与 `403` WAF 标签页路由。
 - **原生 W3C WebMCP 支持**：跨浏览器自动发现并调用网页通过 `document.modelContext` 注册的工具与声明式 `<form toolname="...">` 表单工具。
-- **零依赖 Python SDK (`v0.12.0`)**：直接连接本地管道（热态路由 `< 0.2 ms` / 中位延迟 `~1.1 ms`），内置跨浏览器/多 Profile 零冲突 `tabId` 路由、`page.media()` 与 `page.download_media()` 原生 HLS/fMP4 流媒体直存、`page.batch([...])` 单次往返批处理、后台具名标签页、`allowlist`、`handoff`、脱敏网络/控制台捕获及 `**kwargs` 例程执行。
+- **零依赖 Python SDK (`v0.13.1`)**：直接连接本地管道（热态路由 `< 0.2 ms` / 中位延迟 `~1.1 ms`），内置结构化样式/盒模型诊断与可回滚 `temporary_patch`、DOM 基线对比、脱敏 HAR 1.2 导出、跨浏览器零冲突 `tabId` 路由、`page.media()` / `page.download_media()` 原生 HLS/fMP4 直存及 `page.batch([...])` 单次往返批处理。
 
 ---
 
 ## 文档导航
 
-- **[1-Prompt 零编译安装手册 (docs/INSTALL.md)](docs/INSTALL.md)**
-- **[v0.10.x / v0.11.x → v0.12.0 升级说明 (docs/UPGRADE.md)](docs/UPGRADE.md)** · **[版本更新规范 (docs/VERSIONING.md)](docs/VERSIONING.md)** · **[更新日志 (CHANGELOG.md)](CHANGELOG.md)**
+- **[1-Prompt 零编译安装手册 (docs/INSTALL.md)](docs/INSTALL.md)** · **[事务化安装包与安全升级 (docs/INSTALLATION.md)](docs/INSTALLATION.md)**
+- **[结构化前端诊断与可逆补丁指南 (docs/DEBUGGING.md)](docs/DEBUGGING.md)**
+- **[v0.10.x / v0.11.x / v0.12.0 → v0.13.1 升级说明 (docs/UPGRADE.md)](docs/UPGRADE.md)** · **[版本更新规范 (docs/VERSIONING.md)](docs/VERSIONING.md)** · **[更新日志 (CHANGELOG.md)](CHANGELOG.md)**
 - **[完整使用手册 (docs/USAGE.md)](docs/USAGE.md)**
 - **[核心特性与 31+1 个 MCP 工具详解 (docs/FEATURES.md)](docs/FEATURES.md)**
 - **[MCP 客户端一键配置大全 (docs/MCP_CLIENTS.md)](docs/MCP_CLIENTS.md)**

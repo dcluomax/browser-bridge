@@ -8,6 +8,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runDebugChecks } from './debug_checks.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -116,6 +117,11 @@ function serveFixtures() {
   const server = createServer((request, response) => {
     requestLog.push(`${new Date().toISOString().slice(11, 23)} ${request.headers.host} ${request.url}`);
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname === '/debug-api') {
+      response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify({ message: 'Original response' }));
+      return;
+    }
     if (url.pathname === '/binary') {
       const length = Math.min(20 * 1024 * 1024 + 1, Math.max(0, Number(url.searchParams.get('size')) || 0));
       response.writeHead(200, { 'content-type': 'application/octet-stream', ...(url.searchParams.has('chunked') ? {} : { 'content-length': length }) });
@@ -369,7 +375,7 @@ async function main() {
     check('no tabs are visible before sharing/opening', empty.text.includes('No tabs are available'), empty.text);
 
     const opened = await client.call('browser_tabs', { action: 'new', url: `${base}/form.html` });
-    check('browser_tabs new opens the fixture', !opened.isError && opened.text.includes('Bridge Test'), opened.text);
+    check('browser_tabs new opens the fixture', !opened.isError && opened.text.includes(`${base}/form.html`), opened.text);
 
     let snap = (await client.call('browser_snapshot')).text;
     const frameReady = await waitFor(async () => {
@@ -513,6 +519,11 @@ async function main() {
     });
     console.log(pythonOutput.trim());
     check('managed Python SDK integration suite', pythonExit === 0, pythonOutput);
+
+    await runDebugChecks(client, {
+      base, instance, kind: spec.kind, check, env: isolatedEnv,
+      createClient: (environment) => new McpClient(hostExe, environment),
+    });
 
     const listed = await client.call('browser_tabs', { action: 'list' });
     const tabLines = listed.text.split('\n').filter((l) => l.startsWith('- ['));

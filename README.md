@@ -5,14 +5,14 @@
 <br />
 
 [![CI](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dcluomax/browser-bridge/actions/workflows/ci.yml)
-[![Release v0.12.0](https://img.shields.io/badge/Release-v0.12.0-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
+[![Release v0.13.1](https://img.shields.io/badge/Release-v0.13.1-0ea5e9)](https://github.com/dcluomax/browser-bridge/releases/latest)
 [![100% Local](https://img.shields.io/badge/100%25%20Local-0%20Cloud%20Relay-0284c7)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Zero-Port Secure](https://img.shields.io/badge/Secure-0%20TCP%20Ports%20%7C%203--Layer%20ACL-059669)](docs/SECURITY_MODEL.md)
 [![Native Fast](https://img.shields.io/badge/FAST-~1.1ms%20Rust%20Pipe%20IPC-d97706)](#four-core-pillars-local--secure--fast--self-evolving)
 [![Self-Evolving](https://img.shields.io/badge/Website%20Optimizations-24%20Site%20JSONs%20%7C%20Up%20to%201800x%20Faster-6366f1)](#website-optimizations)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2563eb.svg)](LICENSE)
 
-**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Upgrade Notes (v0.12.0)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
+**English** · **[简体中文](README.zh-CN.md)** · **[Website Optimizations](#website-optimizations)** · **[1-Prompt Install](docs/INSTALL.md)** · **[Safe Installs & Updates](docs/INSTALLATION.md)** · **[Structured Debugging](docs/DEBUGGING.md)** · **[Upgrade Notes (v0.13.1)](docs/UPGRADE.md)** · **[Versioning Policy](docs/VERSIONING.md)** · **[Usage Guide](docs/USAGE.md)** · **[Feature Deep Dive](docs/FEATURES.md)** · **[Python SDK](python/README.md)** · **[Wiki](https://github.com/dcluomax/browser-bridge/wiki)**
 
 </div>
 
@@ -281,7 +281,9 @@ Read the complete **[Python SDK & Direct IPC Reference](python/README.md)** and 
 | Document | Contents |
 | --- | --- |
 | **[docs/INSTALL.md](docs/INSTALL.md)** | AI Agent 1-Prompt installation playbook (zero-build SHA-256 prebuilt release setup) |
-| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.10.x` / `v0.11.x` → `v0.12.0` Upgrade Notes (zero-collision multi-browser routing, `browser_media` & HLS/fMP4 download, `SiteLearner` v2 & 24 site playbooks) |
+| **[docs/INSTALLATION.md](docs/INSTALLATION.md)** | Verified prebuilt/source packages, transactional install/rollback/pinning, Firefox dev launcher & opt-in Windows idle-safe updates |
+| **[docs/DEBUGGING.md](docs/DEBUGGING.md)** | Structured CSS/layout inspection, semantic DOM baselines, conflict-safe temporary patches, HAR 1.2 & performance diagnostics |
+| **[docs/UPGRADE.md](docs/UPGRADE.md)** | `v0.10.x` / `v0.11.x` / `v0.12.0` → `v0.13.1` Upgrade Notes (structured diagnostics, transactional updates, multi-browser routing & HLS/fMP4 media) |
 | **[docs/VERSIONING.md](docs/VERSIONING.md)** | SemVer & Site-Optimization Update Spec (**website JSON updates bump 3rd `PATCH` digit `0.10.Z`**) |
 | **[CHANGELOG.md](CHANGELOG.md)** | Full release history and measured network-excluded per-site speedup benchmarks |
 | **[llms.txt](llms.txt)** | Machine-readable repository index for LLM coding agents |

@@ -69,14 +69,21 @@ async function executeWithRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-const EXPECTED_CONTENT_VERSION = '0.12.0';
+const EXPECTED_CONTENT_VERSION = '0.13.0';
+
+interface ContentOutcome {
+  ok?: unknown;
+  err?: string;
+  code?: string;
+  missing?: boolean;
+}
 
 /** Runs inside the page (isolated world). Must be self-contained: it is serialized by the browser. */
 function invokeContent(
   method: string,
   args: unknown[],
   expectedVersion: string,
-): { ok?: unknown; err?: string; missing?: boolean } | Promise<{ ok?: unknown; err?: string; missing?: boolean }> {
+): ContentOutcome | Promise<ContentOutcome> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bb = (globalThis as any).__bb;
   const isOlder = (actual: string, expected: string): boolean => {
@@ -94,17 +101,21 @@ function invokeContent(
   ) {
     return { missing: true };
   }
+  const failure = (error: unknown): ContentOutcome => ({
+    err: error instanceof Error ? error.message : String(error),
+    ...(error instanceof Error && 'code' in error && typeof error.code === 'string' ? { code: error.code } : {}),
+  });
   try {
     const out = bb[method](...args);
     if (out && typeof (out as PromiseLike<unknown>).then === 'function') {
       return Promise.resolve(out).then(
         (ok) => ({ ok }),
-        (error: unknown) => ({ err: error instanceof Error ? error.message : String(error) }),
+        failure,
       );
     }
     return { ok: out };
   } catch (error) {
-    return { err: error instanceof Error ? error.message : String(error) };
+    return failure(error);
   }
 }
 
@@ -127,11 +138,11 @@ export async function callFrame<T>(tab: chrome.tabs.Tab, frameId: number, method
   assertScriptable(tab);
   const target: chrome.scripting.InjectionTarget = { tabId: tab.id!, frameIds: [frameId] };
   const immediate = isChromium ? { injectImmediately: true } : {};
-  let results: chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
+  let results: chrome.scripting.InjectionResult<ContentOutcome>[];
   try {
     results = (await executeWithRetry(() =>
       api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION], ...immediate }),
-    )) as chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
+    )) as chrome.scripting.InjectionResult<ContentOutcome>[];
   } catch (error) {
     throw describeInjectionError(error, tab);
   }
@@ -141,14 +152,14 @@ export async function callFrame<T>(tab: chrome.tabs.Tab, frameId: number, method
     try {
       results = (await executeWithRetry(() =>
         api.scripting.executeScript({ target, func: invokeContent, args: [method, args, EXPECTED_CONTENT_VERSION], ...immediate }),
-      )) as chrome.scripting.InjectionResult<{ ok?: unknown; err?: string; missing?: boolean }>[];
+      )) as chrome.scripting.InjectionResult<ContentOutcome>[];
     } catch (error) {
       throw describeInjectionError(error, tab);
     }
     value = results?.[0]?.result;
   }
   if (!value || value.missing) throw new BridgeError('script_error', `Frame ${frameId} did not return a result for ${method}.`);
-  if (value.err !== undefined) throw new BridgeError('page_error', value.err);
+  if (value.err !== undefined) throw new BridgeError(value.code ?? 'page_error', value.err);
   return value.ok as T;
 }
 

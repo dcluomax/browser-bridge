@@ -5,6 +5,7 @@ import { parseLocator, type LocatedElements, type Locator } from '../shared/loca
 import { BridgeError } from '../shared/protocol.ts';
 import { assertAllowedByLists, detectBotChallenge, normalizeAllowedOrigins, type ChallengeDetection } from './allowlist.ts';
 import * as cdp from './cdp.ts';
+import { DebugCommands, isDebugMethod, isDebugReadSafe } from './debug.ts';
 import {
   cancelTabInteractions,
   isTabWaitingHandoff,
@@ -189,8 +190,14 @@ async function withInput<T>(
 
 export class Commands {
   private readonly stagedUploads = new Map<string, Array<{ name: string; mimeType: string; chunks: string[] }>>();
+  private readonly debug: DebugCommands;
 
-  constructor(private readonly registry: TabRegistry) {}
+  constructor(private readonly registry: TabRegistry) { this.debug = new DebugCommands(registry); }
+
+  releaseDebugOwner(session: string): Promise<void> { return this.debug.releaseOwner(session); }
+  releaseDebugTabs(tabIds: readonly number[]): Promise<void> { return this.debug.releaseTabs(tabIds); }
+  releaseAllDebugState(): Promise<void> { return this.debug.releaseAll(); }
+  forgetDebugTab(tabId: number): void { this.debug.forgetTab(tabId); }
 
   async run(session: string, method: string, params: Params): Promise<unknown> {
     if (params && typeof params === 'object' && '_noLearn' in params) {
@@ -208,6 +215,13 @@ export class Commands {
       this.registry.beginTabCall(trackedTab);
     }
     try {
+      if (isDebugMethod(method)) {
+        const result = await this.debug.run(session, method, params);
+        if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 900_000) {
+          throw new BridgeError('result_too_large', 'Diagnostic evidence exceeds the IPC response budget. Use a narrower subtree, fewer entries or a smaller change limit.');
+        }
+        return result;
+      }
       switch (method) {
         case 'status': return await this.status(session);
         case 'tabs.list': return await this.tabsList(session);
@@ -258,6 +272,7 @@ export class Commands {
   }
 
   private static isReadSafeMethod(method: string, params: Params): boolean {
+    if (isDebugMethod(method)) return isDebugReadSafe(method, params);
     if (
       method === 'status' ||
       method === 'tabs.list' ||
@@ -310,6 +325,14 @@ export class Commands {
       idleCloseMinutes: s.idleCloseMinutes,
       handoffAndDemonstrate: 1,
       networkAndConsole: 1,
+      domBaselines: 1,
+      stylesAndLayout: 1,
+      reversiblePatches: 1,
+      metadataHar: 1,
+      browserPerformance: 1,
+      debuggerMetrics: isChromium ? 1 : 0,
+      requestInterception: isChromium ? 1 : 0,
+      extensionVersion: api.runtime.getManifest().version,
     };
   }
 
@@ -1678,8 +1701,10 @@ export class Commands {
   private async network(session: string, params: Params) {
     const tab = await this.registry.resolveTab(session, num(params, 'tabId'));
     const action = (str(params, 'action') ?? 'status').toLowerCase();
+    if (!['start', 'status', 'stop', 'clear'].includes(action)) throw new BridgeError('bad_request', 'Network action must be start, status, stop or clear.');
     if (action === 'start') {
       const started = startNetworkCapture(tab.id!, {
+        owner: session,
         maxEntries: num(params, 'maxEntries'),
         urlInclude: str(params, 'urlInclude'),
         clear: bool(params, 'clear') !== false,
@@ -1690,6 +1715,7 @@ export class Commands {
       return {
         tabId: tab.id,
         ...readNetworkCapture(tab.id!, {
+          owner: session,
           stop: true,
           onlyFailures: bool(params, 'onlyFailures') === true,
           limit: num(params, 'limit'),
@@ -1697,11 +1723,12 @@ export class Commands {
       };
     }
     if (action === 'clear') {
-      return { tabId: tab.id, ...readNetworkCapture(tab.id!, { clear: true, limit: 1 }), exchanges: [] };
+      return { tabId: tab.id, ...readNetworkCapture(tab.id!, { clear: true, limit: 1, owner: session }), exchanges: [] };
     }
     return {
       tabId: tab.id,
       ...readNetworkCapture(tab.id!, {
+        owner: session,
         onlyFailures: bool(params, 'onlyFailures') === true,
         limit: num(params, 'limit'),
       }),

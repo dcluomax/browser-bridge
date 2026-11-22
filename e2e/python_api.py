@@ -1,6 +1,7 @@
 import argparse
 import os
 from pathlib import Path
+import re
 import tempfile
 import time
 import unittest
@@ -410,6 +411,7 @@ class ManagedApiTests(unittest.TestCase):
         # 1. Background silent open (active=False default), collapsed [Agent] group, and persistent named tab reuse
         self.page.bring_to_front()
         named1 = self.browser.new_page(args.base + "/second.html", name="work-doc", group="Agent-Batch")
+        routine_saved = False
         try:
             tabs_map = {t["tabId"]: t for t in self.browser.call("tabs.list")["tabs"]}
             self.assertFalse(tabs_map[named1.tab_id]["active"], "Agent tabs must open silently in background by default")
@@ -461,6 +463,7 @@ class ManagedApiTests(unittest.TestCase):
             named1.start_network_capture(url_include="/binary")
             named1._call("page.demonstrate", {"action": "start", "instruction": "Run probe flow", "bringToFront": False})
 
+            # Chromium emits trusted input. Firefox DOM input must not impersonate a user demonstration.
             named1.locator("#secret-pw").fill("MySuperSecretPassword123!")
             named1.locator("#fire-diag").click()
             time.sleep(0.25)
@@ -469,17 +472,20 @@ class ManagedApiTests(unittest.TestCase):
             steps = res_demo.get("steps", [])
             serialized_steps = repr(steps)
             self.assertNotIn("MySuperSecretPassword123!", serialized_steps, "Password input must never be recorded!")
-            self.assertIn("click", serialized_steps)
-
-            named1.save_routine(
-                routine={
-                    "name": "taught_probe_flow",
-                    "description": "Demonstrated diagnostic flow",
-                    "readOnly": False,
-                    "params": {},
-                    "steps": steps,
-                }
-            )
+            if self.browser.call("status").get("trustedInputSupported"):
+                self.assertIn("click", serialized_steps)
+                named1.save_routine(
+                    routine={
+                        "name": "taught_probe_flow",
+                        "description": "Demonstrated diagnostic flow",
+                        "readOnly": False,
+                        "params": {},
+                        "steps": steps,
+                    }
+                )
+                routine_saved = True
+            else:
+                self.assertEqual(steps, [], "Synthetic DOM events must not become user-demonstrated routines.")
 
             exchanges = named1.stop_network_capture()
             self.assertGreaterEqual(len(exchanges), 1)
@@ -492,16 +498,63 @@ class ManagedApiTests(unittest.TestCase):
             errs = named1.console_messages(level="error")
             self.assertTrue(any("[REDACTED]" in e["text"] and "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in e["text"] for e in errs), errs)
 
-            named1.goto(args.base + "/diag-probe.html")
-            named1.run_routine("taught_probe_flow")
-            self.assertEqual(named1.locator("#fire-diag").inner_text(), "Fired")
+            if routine_saved:
+                named1.goto(args.base + "/diag-probe.html")
+                named1.run_routine("taught_probe_flow")
+                self.assertEqual(named1.locator("#fire-diag").inner_text(), "Fired")
         finally:
             try:
-                named1.save_routine(delete_routine="taught_probe_flow")
-            except Exception:
-                pass
-            closed_grp = self.browser.call("tabs.close", {"group": "Agent-Batch"})
-            self.assertIn(named1.tab_id, closed_grp.get("closedTabs", []))
+                if routine_saved:
+                    named1.save_routine(delete_routine="taught_probe_flow")
+            finally:
+                closed_grp = self.browser.call("tabs.close", {"group": "Agent-Batch"})
+                self.assertIn(named1.tab_id, closed_grp.get("closedTabs", []))
+
+    def test_0130_structured_debugging_and_temporary_patch_api(self):
+        page = self.page
+        page.goto(args.base + "/debug.html")
+        heading = page.locator("#debug-target")
+        baseline = page.create_dom_baseline(locator=heading)
+        self.assertTrue(page.compare_dom_baseline(baseline["id"])["unchanged"])
+        with page.temporary_patch([{
+            "target": heading, "text": "Python patch",
+            "styles": {"color": "rgb(0, 128, 0)"}, "attributes": {"title": "Python probe"},
+        }]):
+            self.assertEqual(page.computed_styles(locator=heading, properties=["color"])["properties"]["color"], "rgb(0, 128, 0)")
+            self.assertFalse(page.compare_dom_baseline(baseline["id"])["unchanged"])
+            self.assertEqual(heading.get_attribute("title"), "Python probe")
+        self.assertIsNone(heading.get_attribute("title"))
+        self.assertTrue(page.compare_dom_baseline(baseline["id"])["unchanged"])
+        self.assertEqual(page.patches()["patches"], [])
+        page.release_dom_baseline(baseline["id"])
+        box = page.box_model(locator=page.locator("#point-target"))
+        self.assertEqual(box["boundingRect"]["width"], 180)
+        self.assertEqual(box["padding"]["left"], 8)
+        hit = page.hit_test(box["boundingRect"]["left"] + 90, box["boundingRect"]["top"] + 40)
+        self.assertEqual(hit["top"]["text"], "Point cover")
+        frame = re.search(r'button "Frame button".*\[ref=f(\d+)e\d+\]', page.snapshot())
+        self.assertIsNotNone(frame)
+        frame_id = int(frame[1])
+        frame_button = page.in_frame(frame_id).get_by_role("button", name="Frame button")
+        frame_styles = page.computed_styles(locator=frame_button, properties=["display"])
+        self.assertEqual(frame_styles["frameId"], frame_id)
+        self.assertTrue(frame_styles["element"]["ref"].startswith(f"f{frame_id}e"))
+        frame_baseline = page.create_dom_baseline(locator=frame_button)
+        self.assertTrue(frame_baseline["rootRef"].startswith(f"f{frame_id}e"))
+        page.release_dom_baseline(frame_baseline["id"], frame_id=frame_id)
+        with self.assertRaisesRegex(BridgeError, "capture_required"):
+            page.export_har()
+        page.start_network_capture(url_include="/debug-api")
+        page.locator("#request").click()
+        page.get_by_text("200: Original response", exact=True).wait_for(timeout=5000)
+        har = page.export_har()
+        entry = next(entry for entry in har["log"]["entries"] if entry["request"]["url"].endswith("/debug-api"))
+        self.assertEqual(entry["response"]["status"], 200)
+        self.assertNotIn("fixture-private-value", str(har))
+        page.stop_network_capture()
+        performance = page.performance(include_resources=True)
+        self.assertEqual(performance["source"], "browser-performance-api")
+        self.assertTrue(any(entry["url"].endswith("/debug-api") for entry in performance["resources"]))
 
     def test_shared_inventory_capability_and_agent_private_boundary(self):
         self.assertEqual(self.browser.call("status")["sharedTabInventory"], 1)

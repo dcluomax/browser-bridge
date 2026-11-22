@@ -58,8 +58,23 @@ async function buildHello(): Promise<HelloMessage> {
 }
 
 async function releaseTabs(tabIds: number[]): Promise<void> {
+  await commands.releaseDebugTabs(tabIds);
   await Promise.all(tabIds.map((id) => cdp.detach(id)));
   if (registry.sessions.size === 0) await cdp.detachAll();
+}
+
+async function closeSession(session: string): Promise<void> {
+  try {
+    await commands.releaseDebugOwner(session);
+  } catch (error) {
+    console.error('Browser Bridge session cleanup failed:', error instanceof Error ? error.message : String(error));
+  } finally {
+    await releaseTabs(registry.closeSession(session));
+  }
+}
+
+async function closeAllSessions(): Promise<void> {
+  await Promise.all([...registry.sessions.keys()].map((session) => closeSession(session)));
 }
 
 async function handleRequest(message: RequestMessage): Promise<void> {
@@ -83,7 +98,9 @@ function onHostMessage(message: HostToExtension): void {
       break;
     case 'session':
       if (message.event === 'open') registry.openSession(message.session, message.client);
-      else void releaseTabs(registry.closeSession(message.session));
+      else void closeSession(message.session).catch((error: unknown) => {
+        console.error('Browser Bridge tab cleanup failed:', error instanceof Error ? error.message : String(error));
+      });
       break;
     case 'request':
       void handleRequest(message);
@@ -96,7 +113,9 @@ function onHostMessage(message: HostToExtension): void {
   }
 }
 
-const native = new NativeConnection(onHostMessage, () => void releaseTabs(registry.closeAllSessions()), buildHello);
+const native = new NativeConnection(onHostMessage, () => void closeAllSessions().catch((error: unknown) => {
+  console.error('Browser Bridge disconnect cleanup failed:', error instanceof Error ? error.message : String(error));
+}), buildHello);
 
 function ensureReady(): Promise<void> {
   ready ??= (async () => {
@@ -119,6 +138,7 @@ interface PopupState {
   browser: string;
   instanceId: string;
   extensionVersion: string;
+  versionWarning: string;
   contextMenuReady: boolean;
   contextMenuError: string;
   settings: Settings;
@@ -172,6 +192,7 @@ async function popupState(): Promise<PopupState> {
     browser: browser.kind,
     instanceId: getInstanceId(),
     extensionVersion: api.runtime.getManifest().version,
+    versionWarning: native.versionWarning,
     contextMenuReady: menuState.available && !menuState.error,
     contextMenuError: menuState.error,
     settings: { ...settings() },
@@ -216,6 +237,7 @@ async function handlePopup(message: {
         const sharedTab = await api.tabs.get(message.tabId).catch(() => undefined);
         registry.grant(message.tabId, 'user', null, sharedTab?.url ?? sharedTab?.pendingUrl, message.mode ?? 'read');
       } else {
+        await commands.releaseDebugTabs([message.tabId]);
         cancelTabInteractions(message.tabId);
         dropTabNetworkCapture(message.tabId);
         registry.revoke(message.tabId);
@@ -227,6 +249,7 @@ async function handlePopup(message: {
       if (typeof message.tabId !== 'number' || (message.mode !== 'read' && message.mode !== 'write')) {
         throw new Error('tabId and mode (read|write) required');
       }
+      if (message.mode === 'read') await commands.releaseDebugTabs([message.tabId]);
       registry.setMode(message.tabId, message.mode);
       syncContextMenuForTab(registry, message.tabId);
       return popupState();
@@ -302,6 +325,8 @@ async function handlePopup(message: {
     case 'popup:settings': {
       const before = settings();
       const after = await updateSettings(message.patch ?? {});
+      if (before.accessAllTabs && !after.accessAllTabs) await commands.releaseAllDebugState();
+      if (!before.readOnlyMode && after.readOnlyMode) await commands.releaseDebugTabs([...registry.grants.keys()]);
       if (before.trustedInput && !after.trustedInput) await cdp.detachAll();
       if (before.readOnlyMode !== after.readOnlyMode) await registry.refreshAllBadges();
       if (before.locale !== after.locale) {
@@ -387,6 +412,11 @@ api.tabs.onCreated.addListener((tab) => {
 });
 
 api.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId === 0) {
+    void commands.releaseDebugTabs([details.tabId]).catch((error: unknown) => {
+      console.error('Browser Bridge navigation cleanup failed:', error instanceof Error ? error.message : String(error));
+    });
+  }
   if (details.frameId !== 0 || !details.url || details.url === 'about:blank') return;
   const grant = registry.grants.get(details.tabId);
   if (!grant) return;
@@ -399,6 +429,7 @@ api.webNavigation.onCommitted.addListener((details) => {
 });
 
 api.tabs.onRemoved.addListener((tabId) => {
+  commands.forgetDebugTab(tabId);
   cancelTabInteractions(tabId);
   dropTabNetworkCapture(tabId);
   registry.onTabRemoved(tabId);
@@ -407,6 +438,7 @@ api.tabs.onRemoved.addListener((tabId) => {
 });
 
 api.tabs.onReplaced?.addListener((addedTabId, removedTabId) => {
+  commands.forgetDebugTab(removedTabId);
   registry.onTabReplaced(addedTabId, removedTabId);
   cdp.clearDismissed(removedTabId);
   void cdp.detach(removedTabId);
@@ -440,7 +472,7 @@ if (!isChromium) {
 
 if (api.contextMenus) {
   api.contextMenus.onClicked.addListener((info, tab) => {
-    void handleContextMenuClick(info, tab, registry, native, ensureReady);
+    void handleContextMenuClick(info, tab, registry, native, ensureReady, (tabId) => commands.releaseDebugTabs([tabId]));
   });
 }
 
@@ -459,6 +491,7 @@ api.alarms.onAlarm.addListener((alarm) => {
     native.ensureConnected();
     void ensureContextMenus();
     void registry.sweepIdleAgentTabs(Date.now(), async (id) => {
+      await commands.releaseDebugTabs([id]);
       cancelTabInteractions(id);
       dropTabNetworkCapture(id);
       await cdp.detach(id);

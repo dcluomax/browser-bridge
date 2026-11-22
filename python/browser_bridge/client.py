@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import collections
+from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes
 import http.client
@@ -23,7 +24,7 @@ import urllib.request
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 class BridgeError(RuntimeError):
@@ -934,7 +935,21 @@ class BrowserBridge:
         "routine.run",
         "site.profile",
         "request.fetch",
+        "page.styles",
+        "page.layout",
+        "page.domBaseline",
+        "page.performance",
+        "page.har",
+        "page.debugger",
     })
+
+    @classmethod
+    def _is_read_safe(cls, method: str, payload: dict[str, Any]) -> bool:
+        if method in {"page.patch", "page.intercept"}:
+            return payload.get("action", "list") == "list"
+        return method in cls._READ_SAFE_METHODS and (
+            method != "page.fetch" or str(payload.get("method", "GET")).upper() in {"GET", "HEAD"}
+        )
 
     def __init__(
         self,
@@ -996,10 +1011,7 @@ class BrowserBridge:
         """Call any Bridge API method directly; enforces read_only when enabled."""
         payload = dict(params or {})
         if self.read_only:
-            if method == "page.fetch":
-                if str(payload.get("method", "GET")).upper() not in {"GET", "HEAD"}:
-                    raise BridgeError("read_only", f"Read-only BrowserBridge client cannot perform {method} with {payload.get('method')}.")
-            elif method not in self._READ_SAFE_METHODS:
+            if not self._is_read_safe(method, payload):
                 raise BridgeError("read_only", f"Read-only BrowserBridge client cannot perform '{method}'.")
             if method != "request.fetch":
                 payload["readOnly"] = True
@@ -1210,6 +1222,39 @@ class _FinderScope:
 
 
 class Page(_FinderScope):
+    _STEP_METHODS = {
+        "click": "page.click", "doubleClick": "page.click", "dblclick": "page.click",
+        "drag": "page.drag", "hover": "page.hover", "type": "page.type", "fill": "page.fill",
+        "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
+        "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
+        "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
+        "media": "page.media", "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
+        "fetch": "page.fetch", "navigate": "page.navigate", "goto": "page.navigate", "history": "page.history",
+        "dialog": "page.dialog", "webmcp.list": "page.webmcp.list", "webmcp.call": "page.webmcp.call",
+        "styles": "page.styles", "layout": "page.layout", "domBaseline": "page.domBaseline",
+        "dom_baseline": "page.domBaseline", "patch": "page.patch", "performance": "page.performance",
+        "har": "page.har", "debugger": "page.debugger", "intercept": "page.intercept",
+        "network": "page.network", "console": "page.console",
+    }
+
+    @classmethod
+    def _validate_debug_routine_steps(cls, steps: list[dict[str, Any]]) -> None:
+        def live_reference(value: Any) -> bool:
+            if isinstance(value, dict):
+                return any(
+                    key not in {"styles", "attributes"} and (
+                        key in {"id", "documentId", "ref"} and isinstance(item, str) and "{{" not in item
+                        or live_reference(item)
+                    )
+                    for key, item in value.items()
+                )
+            return isinstance(value, list) and any(live_reference(item) for item in value)
+
+        for index, step in enumerate(steps):
+            method = cls._STEP_METHODS.get(step.get("op", ""), step.get("op", ""))
+            if method in {"page.domBaseline", "page.patch"} and live_reference(step.get("params") or {}):
+                raise BridgeError("bad_request", f"Diagnostic routine step {index + 1} contains a live document handle/ref. Use a locator and runtime binding such as {{{{baseline.id}}}}.")
+
     def __init__(self, browser: BrowserBridge, tab_id: int):
         self.browser = browser
         self.tab_id = tab_id
@@ -1223,6 +1268,153 @@ class Page(_FinderScope):
         if self._closed:
             raise BridgeError("closed", "The tab is closed.")
         return self.browser.call(method, {**(params or {}), "tabId": self.tab_id}, timeout=timeout)
+
+    def _debug_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        result = self._call(method, params)
+        if not isinstance(result, dict):
+            raise BridgeError("protocol_error", "The diagnostic operation did not return an object.")
+        return result
+
+    def _debug_target(
+        self, ref: str | None = None, locator: Locator | dict[str, Any] | None = None,
+        frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        if ref is not None and locator is not None:
+            raise ValueError("Provide ref or locator, not both.")
+        params: dict[str, Any] = {}
+        if ref is not None:
+            if not isinstance(ref, str) or not ref:
+                raise ValueError("ref must be a non-empty element ref")
+            params["ref"] = ref
+        if isinstance(locator, Locator):
+            if locator._page is not self:
+                raise ValueError("The locator belongs to another Page instance.")
+            params.update(locator._target())
+        elif locator is not None:
+            if not isinstance(locator, dict):
+                raise ValueError("locator must be a Locator or structured locator object")
+            params["locator"] = locator
+        if frame_id is not None:
+            if isinstance(frame_id, bool) or not isinstance(frame_id, int) or not 0 <= frame_id <= 9_007_199_254_740_991:
+                raise ValueError("frame_id must be a non-negative safe integer")
+            params["frameId"] = frame_id
+        return params
+
+    def computed_styles(
+        self, *, ref: str | None = None, locator: Locator | dict[str, Any] | None = None,
+        properties: list[str] | None = None, pseudo: str | None = None, frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        params = self._debug_target(ref, locator, frame_id)
+        params["action"] = "computed"
+        if properties is not None:
+            params["properties"] = properties
+        if pseudo is not None:
+            params["pseudo"] = pseudo
+        return self._debug_call("page.styles", params)
+
+    def style_context(
+        self, *, ref: str | None = None, locator: Locator | dict[str, Any] | None = None,
+        frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        return self._debug_call("page.styles", {**self._debug_target(ref, locator, frame_id), "action": "context"})
+
+    def box_model(
+        self, *, ref: str | None = None, locator: Locator | dict[str, Any] | None = None,
+        frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        return self._debug_call("page.layout", {**self._debug_target(ref, locator, frame_id), "action": "box"})
+
+    def hit_test(self, x: float, y: float, *, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.layout", {**self._debug_target(frame_id=frame_id), "action": "hitTest", "x": x, "y": y})
+
+    def create_dom_baseline(
+        self, *, ref: str | None = None, locator: Locator | dict[str, Any] | None = None,
+        max_nodes: int | None = None, max_text: int | None = None, frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        params = {**self._debug_target(ref, locator, frame_id), "action": "create"}
+        if max_nodes is not None:
+            params["maxNodes"] = max_nodes
+        if max_text is not None:
+            params["maxText"] = max_text
+        return self._debug_call("page.domBaseline", params)
+
+    def compare_dom_baseline(self, baseline_id: str, *, max_changes: int | None = None, frame_id: int | None = None) -> dict[str, Any]:
+        params = {**self._debug_target(frame_id=frame_id), "action": "compare", "id": baseline_id}
+        if max_changes is not None:
+            params["maxChanges"] = max_changes
+        return self._debug_call("page.domBaseline", params)
+
+    def describe_dom_baseline(self, baseline_id: str, *, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.domBaseline", {**self._debug_target(frame_id=frame_id), "action": "describe", "id": baseline_id})
+
+    def release_dom_baseline(self, baseline_id: str, *, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.domBaseline", {**self._debug_target(frame_id=frame_id), "action": "release", "id": baseline_id})
+
+    def apply_patch(
+        self, changes: list[dict[str, Any]], *, label: str | None = None,
+        ttl_ms: int | None = None, frame_id: int | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(changes, list) or not 1 <= len(changes) <= 50:
+            raise ValueError("changes must contain from 1 to 50 patch changes")
+        normalized = []
+        for change in changes:
+            if not isinstance(change, dict):
+                raise ValueError("Each patch change must be an object.")
+            target = change.get("target")
+            if isinstance(target, Locator):
+                target = self._debug_target(locator=target)
+            elif isinstance(target, dict) and isinstance(target.get("locator"), Locator):
+                target = {**target, **self._debug_target(locator=target["locator"])}
+            normalized.append({**change, "target": target})
+        params = {**self._debug_target(frame_id=frame_id), "action": "apply", "changes": normalized}
+        if label is not None:
+            params["label"] = label
+        if ttl_ms is not None:
+            params["ttlMs"] = ttl_ms
+        return self._debug_call("page.patch", params)
+
+    def patches(self, *, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.patch", {**self._debug_target(frame_id=frame_id), "action": "list"})
+
+    def rollback_patch(self, patch_id: str | None = None, *, frame_id: int | None = None) -> dict[str, Any]:
+        params = {**self._debug_target(frame_id=frame_id), "action": "rollback"}
+        if patch_id is not None:
+            params["id"] = patch_id
+        return self._debug_call("page.patch", params)
+
+    def commit_patch(self, patch_id: str, *, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.patch", {**self._debug_target(frame_id=frame_id), "action": "commit", "id": patch_id})
+
+    @contextmanager
+    def temporary_patch(self, changes: list[dict[str, Any]], **options: Any) -> Iterator[dict[str, Any]]:
+        handle = self.apply_patch(changes, **options)
+        try:
+            yield handle
+        finally:
+            self.rollback_patch(handle["id"], frame_id=handle.get("frameId", 0))
+
+    def performance(self, *, include_resources: bool = False, max_entries: int = 50, frame_id: int | None = None) -> dict[str, Any]:
+        return self._debug_call("page.performance", {
+            **self._debug_target(frame_id=frame_id), "includeResources": include_resources, "maxEntries": max_entries,
+        })
+
+    def export_har(self, *, limit: int = 200, only_failures: bool = False) -> dict[str, Any]:
+        result = self._debug_call("page.har", {"limit": limit, "onlyFailures": only_failures})
+        if not isinstance(result.get("log"), dict) or result["log"].get("version") != "1.2":
+            raise BridgeError("protocol_error", "The host did not return HAR 1.2 evidence.")
+        return result
+
+    def debugger_metrics(self) -> dict[str, Any]:
+        return self._debug_call("page.debugger", {"action": "metrics"})
+
+    def interception(self) -> dict[str, Any]:
+        return self._debug_call("page.intercept", {"action": "list"})
+
+    def set_interception(self, rules: list[dict[str, Any]]) -> dict[str, Any]:
+        return self._debug_call("page.intercept", {"action": "set", "rules": rules})
+
+    def clear_interception(self) -> dict[str, Any]:
+        return self._debug_call("page.intercept", {"action": "clear"})
 
     @property
     def url(self) -> str:
@@ -1589,21 +1781,39 @@ class Page(_FinderScope):
 
     @staticmethod
     def _interpolate_step(template: Any, variables: dict[str, Any]) -> Any:
+        missing = object()
+
+        def lookup(key: str) -> Any:
+            if key in variables:
+                return variables[key]
+            parts = key.split(".")
+            value = variables.get(parts[0], missing)
+            for part in parts[1:]:
+                if isinstance(value, dict):
+                    value = value.get(part, missing)
+                elif isinstance(value, list) and part.isdecimal() and int(part) < len(value):
+                    value = value[int(part)]
+                else:
+                    return missing
+            return value
+
         if isinstance(template, str):
-            if template.startswith("{{") and template.endswith("}}"):
-                key = template[2:-2].strip()
-                if key in variables and "{" not in key and "}" not in key:
-                    return variables[key]
-            out = template
-            for k, v in variables.items():
-                str_val = "" if v is None else (v if isinstance(v, str) else json.dumps(v))
-                enc_tok = "{{" + k + ":urlencode}}"
-                if enc_tok in out:
-                    out = out.replace(enc_tok, urllib.parse.quote(str_val, safe=""))
-                tok = "{{" + k + "}}"
-                if tok in out:
-                    out = out.replace(tok, str_val)
-            return out
+            exact = re.fullmatch(r"\{\{([^{}:]+)\}\}", template)
+            if exact:
+                value = lookup(exact[1].strip())
+                if value is not missing:
+                    return value
+
+            def replace(match: re.Match[str]) -> str:
+                key = match[1].strip()
+                encoded = key.endswith(":urlencode")
+                value = lookup(key[:-10] if encoded else key)
+                if value is missing:
+                    return match[0]
+                text = "" if value is None else (value if isinstance(value, str) else json.dumps(value))
+                return urllib.parse.quote(text, safe="") if encoded else text
+
+            return re.sub(r"\{\{([^{}]+)\}\}", replace, template)
         if isinstance(template, list):
             return [Page._interpolate_step(x, variables) for x in template]
         if isinstance(template, dict):
@@ -1649,18 +1859,7 @@ class Page(_FinderScope):
         if self.browser.read_only and not routine.get("readOnly"):
             raise BridgeError("read_only", f"Routine '{name}' modifies page state and cannot run in read-only mode.")
 
-        op_map = {
-            "click": "page.click", "doubleClick": "page.click", "dblclick": "page.click",
-            "drag": "page.drag", "hover": "page.hover", "type": "page.type", "fill": "page.fill",
-            "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
-            "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
-            "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
-            "media": "page.media", "page.media": "page.media",
-            "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
-            "fetch": "page.fetch", "page.fetch": "page.fetch",
-            "navigate": "page.navigate", "history": "page.history", "dialog": "page.dialog",
-            "webmcp.list": "page.webmcp.list", "webmcp.call": "page.webmcp.call",
-        }
+        op_map = self._STEP_METHODS
         variables: dict[str, Any] = {}
         needs_url_vars = any(
             isinstance((spec or {}).get("default"), str) and "{{url." in spec["default"]
@@ -1762,6 +1961,8 @@ class Page(_FinderScope):
             raise BridgeError("bad_request", "steps must contain at least 1 step.")
         if len(steps) > 100:
             raise BridgeError("bad_request", "steps must contain at most 100 steps per batch.")
+        if save_as_routine:
+            self._validate_debug_routine_steps(steps)
         if isinstance(self.browser._transport, _Transport):
             payload: dict[str, Any] = {
                 "tabId": self.tab_id,
@@ -1776,29 +1977,12 @@ class Page(_FinderScope):
                 payload["readOnly"] = True
             return self.browser.call("page.batch", payload)
 
-        op_map = {
-            "click": "page.click", "doubleClick": "page.click", "dblclick": "page.click",
-            "drag": "page.drag", "hover": "page.hover", "type": "page.type", "fill": "page.fill",
-            "select": "page.select", "check": "page.check", "press": "page.press", "scroll": "page.scroll",
-            "waitFor": "page.waitFor", "wait_for": "page.waitFor", "locate": "page.locate",
-            "query": "page.query", "get_element": "page.query", "queryAll": "page.queryAll",
-            "media": "page.media", "page.media": "page.media",
-            "snapshot": "page.snapshot", "text": "page.text", "screenshot": "page.screenshot",
-            "fetch": "page.fetch", "page.fetch": "page.fetch",
-            "navigate": "page.navigate", "goto": "page.navigate", "history": "page.history", "dialog": "page.dialog",
-            "webmcp.list": "page.webmcp.list", "webmcp.call": "page.webmcp.call",
-        }
-        read_safe = {
-            "page.snapshot", "page.text", "page.locate", "page.query", "page.queryAll",
-            "page.media", "page.waitFor", "page.screenshot", "page.fetch", "page.webmcp.list",
-        }
+        op_map = self._STEP_METHODS
         all_read_safe = True
         for idx, st in enumerate(steps):
             op = st.get("op", "")
             method = op_map.get(op, op)
-            step_ro = method in read_safe and (
-                method != "page.fetch" or str((st.get("params") or {}).get("method", "GET")).upper() in {"GET", "HEAD"}
-            )
+            step_ro = BrowserBridge._is_read_safe(method, self._interpolate_step(st.get("params") or {}, variables or {}))
             all_read_safe = all_read_safe and step_ro
             if self.browser.read_only and not step_ro:
                 raise BridgeError("read_only", f"Batch step {idx + 1} ({method}) is not allowed in read-only mode.")
@@ -1833,6 +2017,8 @@ class Page(_FinderScope):
             op = step["op"]
             method = op_map.get(op, op)
             step_params = dict(self._interpolate_step(step.get("params") or {}, vars_map))
+            if self.browser.read_only and not BrowserBridge._is_read_safe(method, step_params):
+                raise BridgeError("read_only", f"Batch step {idx + 1} ({method}) is not allowed in read-only mode.")
             strip_html = bool(step_params.pop("stripHtml", False)) if method == "page.fetch" else False
             if op in {"doubleClick", "dblclick"}:
                 step_params["doubleClick"] = True
@@ -1906,6 +2092,17 @@ class Page(_FinderScope):
         reset_access_profile: bool = False,
         domain: str | None = None,
     ) -> dict[str, Any]:
+        if routine is not None:
+            defaults = {
+                name: spec["default"]
+                for name, spec in (routine.get("params") or {}).items()
+                if isinstance(spec, dict) and "default" in spec
+            }
+            resolved_steps = [
+                {**step, "params": self._interpolate_step(step.get("params") or {}, defaults)}
+                for step in routine.get("steps") or []
+            ]
+            self._validate_debug_routine_steps(resolved_steps)
         self.browser.start()
         params: dict[str, Any] = {"tabId": self.tab_id}
         if domain:
